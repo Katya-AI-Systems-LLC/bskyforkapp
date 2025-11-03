@@ -1,7 +1,7 @@
 import {Keyboard, type StyleProp, type ViewStyle} from 'react-native'
 import {type AnimatedStyle} from 'react-native-reanimated'
 import {type AppBskyFeedPostgate} from '@atproto/api'
-import {msg} from '@lingui/macro'
+import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
 import {isNative} from '#/platform/detection'
@@ -12,6 +12,9 @@ import {PostInteractionSettingsControlledDialog} from '#/components/dialogs/Post
 import {ChevronBottom_Stroke2_Corner0_Rounded as ChevronDownIcon} from '#/components/icons/Chevron'
 import {Earth_Stroke2_Corner0_Rounded as EarthIcon} from '#/components/icons/Globe'
 import {Group3_Stroke2_Corner0_Rounded as GroupIcon} from '#/components/icons/Group'
+import * as Tooltip from '#/components/Tooltip'
+import {Text} from '#/components/Typography'
+import {useThreadgateNudged} from '#/storage/hooks/threadgate-nudged'
 
 export function ThreadgateBtn({
   postgate,
@@ -29,6 +32,13 @@ export function ThreadgateBtn({
 }) {
   const {_} = useLingui()
   const control = Dialog.useDialogControl()
+  const [threadgateNudged, setThreadgateNudged] = useThreadgateNudged()
+
+  const onDismissTooltip = (visible: boolean) => {
+    console.log('visible', visible)
+    if (visible) return
+    setThreadgateNudged(true)
+  }
 
   const onPress = () => {
     if (isNative && Keyboard.isVisible()) {
@@ -48,20 +58,42 @@ export function ThreadgateBtn({
     ? _(msg`Anybody can interact`)
     : _(msg`Interaction limited`)
 
+  console.log({threadgateNudged})
+
   return (
     <>
+      <Tooltip.Outer
+        visible={!threadgateNudged}
+        onVisibleChange={onDismissTooltip}
+        position="top">
+        <Tooltip.Target>
+          <Button
+            color={threadgateNudged ? 'secondary' : 'primary_subtle'}
+            size="small"
+            testID="openReplyGateButton"
+            onPress={onPress}
+            label={label}
+            accessibilityHint={_(
+              msg`Opens a dialog to choose who can reply to this thread`,
+            )}>
+            <ButtonIcon icon={anyoneCanInteract ? EarthIcon : GroupIcon} />
+            <ButtonText numberOfLines={1}>{label}</ButtonText>
+            <ButtonIcon icon={ChevronDownIcon} size="xs" />
+          </Button>
+        </Tooltip.Target>
+        <Tooltip.TextBubble>
+          <Text>
+            <Trans>Psst! You can edit who can interact with this post.</Trans>
+          </Text>
+        </Tooltip.TextBubble>
+      </Tooltip.Outer>
       <Button
-        color="secondary"
+        label="reset"
+        onPress={() => setThreadgateNudged(false)}
         size="small"
-        testID="openReplyGateButton"
-        onPress={onPress}
-        label={label}
-        accessibilityHint={_(
-          msg`Opens a dialog to choose who can reply to this thread`,
-        )}>
-        <ButtonIcon icon={anyoneCanInteract ? EarthIcon : GroupIcon} />
-        <ButtonText numberOfLines={1}>{label}</ButtonText>
-        <ButtonIcon icon={ChevronDownIcon} size="xs" />
+        color="negative_subtle"
+        style={{marginLeft: 300}}>
+        <ButtonText>Reset</ButtonText>
       </Button>
       <PostInteractionSettingsControlledDialog
         control={control}
