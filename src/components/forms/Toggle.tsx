@@ -240,7 +240,7 @@ export function Item({
         onPressOut={onPressOut}
         onFocus={onFocus}
         onBlur={onBlur}
-        style={[a.flex_row, a.align_center, a.gap_sm, flatten(style)]}>
+        style={[a.flex_row, a.align_center, a.gap_sm, style]}>
         {typeof children === 'function' ? children(state) : children}
       </Pressable>
     </ItemContext.Provider>
