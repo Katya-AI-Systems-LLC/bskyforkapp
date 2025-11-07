@@ -1,18 +1,28 @@
+import {useMemo, useState} from 'react'
 import {Keyboard, type StyleProp, type ViewStyle} from 'react-native'
 import {type AnimatedStyle} from 'react-native-reanimated'
 import {type AppBskyFeedPostgate} from '@atproto/api'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
+import deepEqual from 'lodash.isequal'
 
+import {isNetworkError} from '#/lib/strings/errors'
+import {logger} from '#/logger'
 import {isNative} from '#/platform/detection'
-import {type ThreadgateAllowUISetting} from '#/state/queries/threadgate'
+import {usePostInteractionSettingsMutation} from '#/state/queries/post-interaction-settings'
+import {createPostgateRecord} from '#/state/queries/postgate/util'
+import {usePreferencesQuery} from '#/state/queries/preferences'
+import {
+  type ThreadgateAllowUISetting,
+  threadgateAllowUISettingToAllowRecordValue,
+  threadgateRecordToAllowUISetting,
+} from '#/state/queries/threadgate'
 import {Button, ButtonIcon, ButtonText} from '#/components/Button'
 import * as Dialog from '#/components/Dialog'
 import {PostInteractionSettingsControlledDialog} from '#/components/dialogs/PostInteractionSettingsDialog'
 import {ChevronBottom_Stroke2_Corner0_Rounded as ChevronDownIcon} from '#/components/icons/Chevron'
 import {Earth_Stroke2_Corner0_Rounded as EarthIcon} from '#/components/icons/Globe'
 import {Group3_Stroke2_Corner0_Rounded as GroupIcon} from '#/components/icons/Group'
-
 export function ThreadgateBtn({
   postgate,
   onChangePostgate,
@@ -29,6 +39,8 @@ export function ThreadgateBtn({
 }) {
   const {_} = useLingui()
   const control = Dialog.useDialogControl()
+  const {data: preferences} = usePreferencesQuery()
+  const [persist, setPersist] = useState(false)
 
   const onPress = () => {
     if (isNative && Keyboard.isVisible()) {
@@ -37,6 +49,50 @@ export function ThreadgateBtn({
 
     control.open()
   }
+
+  const defaultThreadgateAllowUISettings = threadgateRecordToAllowUISetting({
+    $type: 'app.bsky.feed.threadgate',
+    post: '',
+    createdAt: new Date().toISOString(),
+    allow: preferences?.postInteractionSettings.threadgateAllowRules,
+  })
+  const defaultPostgate = createPostgateRecord({
+    post: '',
+    embeddingRules:
+      preferences?.postInteractionSettings?.postgateEmbeddingRules || [],
+  })
+
+  const isDirty = useMemo(() => {
+    const everybody = [{type: 'everybody'}]
+    return (
+      !deepEqual(
+        threadgateAllowUISettings,
+        defaultThreadgateAllowUISettings ?? everybody,
+      ) ||
+      !deepEqual(postgate.embeddingRules, defaultPostgate?.embeddingRules ?? [])
+    )
+  }, [
+    defaultThreadgateAllowUISettings,
+    defaultPostgate,
+    threadgateAllowUISettings,
+    postgate,
+  ])
+
+  const {mutate: persistChanges, isPending: isSaving} =
+    usePostInteractionSettingsMutation({
+      onError: err => {
+        if (!isNetworkError(err)) {
+          logger.error('Failed to persist threadgate settings', {
+            safeMessage: err,
+          })
+        }
+      },
+      onSettled: () => {
+        control.close(() => {
+          setPersist(false)
+        })
+      },
+    })
 
   const anyoneCanReply =
     threadgateAllowUISettings.length === 1 &&
@@ -66,12 +122,25 @@ export function ThreadgateBtn({
       <PostInteractionSettingsControlledDialog
         control={control}
         onSave={() => {
-          control.close()
+          if (persist) {
+            persistChanges({
+              threadgateAllowRules: threadgateAllowUISettingToAllowRecordValue(
+                threadgateAllowUISettings,
+              ),
+              postgateEmbeddingRules: postgate.embeddingRules ?? [],
+            })
+          } else {
+            control.close()
+          }
         }}
+        isSaving={isSaving}
         postgate={postgate}
         onChangePostgate={onChangePostgate}
         threadgateAllowUISettings={threadgateAllowUISettings}
         onChangeThreadgateAllowUISettings={onChangeThreadgateAllowUISettings}
+        isDirty={isDirty}
+        persist={persist}
+        onChangePersist={setPersist}
       />
     </>
   )
