@@ -1,9 +1,9 @@
 import {Linking} from 'react-native'
-import {Camera} from 'expo-camera/legacy' // TODO: Migrate to the new one.
+import {useCameraPermissions as useExpoCameraPermissions} from 'expo-camera'
 import * as MediaLibrary from 'expo-media-library'
 
-import {isWeb} from 'platform/detection'
-import {Alert} from 'view/com/util/Alert'
+import {Alert} from '#/view/com/util/Alert'
+import {IS_WEB} from '#/env'
 
 const openPermissionAlert = (perm: string) => {
   Alert.alert(
@@ -26,7 +26,7 @@ export function usePhotoLibraryPermission() {
   const requestPhotoAccessIfNeeded = async () => {
     // On the, we use <input type="file"> to produce a filepicker
     // This does not need any permission granting.
-    if (isWeb) {
+    if (IS_WEB) {
       return true
     }
 
@@ -48,8 +48,37 @@ export function usePhotoLibraryPermission() {
   return {requestPhotoAccessIfNeeded}
 }
 
+export function useVideoLibraryPermission() {
+  const [res, requestPermission] = MediaLibrary.usePermissions({
+    granularPermissions: ['video'],
+  })
+  const requestVideoAccessIfNeeded = async () => {
+    // On the, we use <input type="file"> to produce a filepicker
+    // This does not need any permission granting.
+    if (IS_WEB) {
+      return true
+    }
+
+    if (res?.granted) {
+      return true
+    } else if (!res || res.status === 'undetermined' || res?.canAskAgain) {
+      const {canAskAgain, granted, status} = await requestPermission()
+
+      if (!canAskAgain && status === 'undetermined') {
+        openPermissionAlert('video library')
+      }
+
+      return granted
+    } else {
+      openPermissionAlert('video library')
+      return false
+    }
+  }
+  return {requestVideoAccessIfNeeded}
+}
+
 export function useCameraPermission() {
-  const [res, requestPermission] = Camera.useCameraPermissions()
+  const [res, requestPermission] = useExpoCameraPermissions()
 
   const requestCameraAccessIfNeeded = async () => {
     if (res?.granted) {

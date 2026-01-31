@@ -1,5 +1,5 @@
-import React, {createContext, useContext, useMemo} from 'react'
-import {BSKY_LABELER_DID, ModerationOpts} from '@atproto/api'
+import {createContext, useContext, useMemo} from 'react'
+import {BskyAgent, type ModerationOpts} from '@atproto/api'
 
 import {useHiddenPosts, useLabelDefinitions} from '#/state/preferences'
 import {DEFAULT_LOGGED_OUT_LABEL_PREFERENCES} from '#/state/queries/preferences/moderation'
@@ -9,11 +9,13 @@ import {usePreferencesQuery} from '../queries/preferences'
 export const moderationOptsContext = createContext<ModerationOpts | undefined>(
   undefined,
 )
+moderationOptsContext.displayName = 'ModerationOptsContext'
 
 // used in the moderation state devtool
 export const moderationOptsOverrideContext = createContext<
   ModerationOpts | undefined
 >(undefined)
+moderationOptsOverrideContext.displayName = 'ModerationOptsOverrideContext'
 
 export function useModerationOpts() {
   return useContext(moderationOptsContext)
@@ -41,12 +43,10 @@ export function Provider({children}: React.PropsWithChildren<{}>) {
         ...moderationPrefs,
         labelers: moderationPrefs.labelers.length
           ? moderationPrefs.labelers
-          : [
-              {
-                did: BSKY_LABELER_DID,
-                labels: DEFAULT_LOGGED_OUT_LABEL_PREFERENCES,
-              },
-            ],
+          : BskyAgent.appLabelers.map(did => ({
+              did,
+              labels: DEFAULT_LOGGED_OUT_LABEL_PREFERENCES,
+            })),
         hiddenPosts: hiddenPosts || [],
       },
       labelDefs,

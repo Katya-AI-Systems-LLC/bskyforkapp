@@ -1,7 +1,7 @@
 import {StyleSheet} from 'react-native'
 
-import {colors} from 'lib/styles'
-import hairlineWidth = StyleSheet.hairlineWidth
+import {colors} from '#/lib/styles'
+import {atoms as a} from '#/alf'
 
 export const styles = StyleSheet.create({
   bottomBar: {
@@ -10,14 +10,11 @@ export const styles = StyleSheet.create({
     left: 0,
     right: 0,
     flexDirection: 'row',
-    borderTopWidth: hairlineWidth,
+    borderTopWidth: StyleSheet.hairlineWidth,
     paddingLeft: 5,
     paddingRight: 10,
   },
-  bottomBarWeb: {
-    // @ts-ignore web-only
-    position: 'fixed',
-  },
+  bottomBarWeb: a.fixed,
   ctrl: {
     flex: 1,
     paddingTop: 13,
@@ -27,23 +24,32 @@ export const styles = StyleSheet.create({
     position: 'absolute',
     left: '52%',
     top: 8,
-    backgroundColor: colors.blue3,
     paddingHorizontal: 4,
     paddingBottom: 1,
     borderRadius: 6,
     zIndex: 1,
   },
-  notificationCountLight: {
-    borderColor: colors.white,
-  },
-  notificationCountDark: {
-    borderColor: colors.gray8,
+  notificationCountWeb: {
+    paddingTop: 3,
+    paddingBottom: 3,
+    borderRadius: 12,
   },
   notificationCountLabel: {
     fontSize: 12,
-    fontWeight: 'bold',
+    fontWeight: '600',
     color: colors.white,
     fontVariant: ['tabular-nums'],
+  },
+  hasNewBadge: {
+    position: 'absolute',
+    left: '54%',
+    marginLeft: 4,
+    top: 10,
+    width: 8,
+    height: 8,
+    backgroundColor: colors.blue3,
+    borderRadius: 6,
+    zIndex: 1,
   },
   ctrlIcon: {
     marginLeft: 'auto',

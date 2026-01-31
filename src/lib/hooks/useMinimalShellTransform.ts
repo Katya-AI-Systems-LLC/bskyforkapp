@@ -6,16 +6,21 @@ import {useShellLayout} from '#/state/shell/shell-layout'
 // Keep these separated so that we only pay for useAnimatedStyle that gets used.
 
 export function useMinimalShellHeaderTransform() {
-  const mode = useMinimalShellMode()
+  const {headerMode} = useMinimalShellMode()
   const {headerHeight} = useShellLayout()
 
   const headerTransform = useAnimatedStyle(() => {
+    const headerModeValue = headerMode.get()
     return {
-      pointerEvents: mode.value === 0 ? 'auto' : 'none',
-      opacity: Math.pow(1 - mode.value, 2),
+      pointerEvents: headerModeValue === 0 ? 'auto' : 'none',
+      opacity: Math.pow(1 - headerModeValue, 2),
       transform: [
         {
-          translateY: interpolate(mode.value, [0, 1], [0, -headerHeight.value]),
+          translateY: interpolate(
+            headerModeValue,
+            [0, 1],
+            [0, -headerHeight.get()],
+          ),
         },
       ],
     }
@@ -25,31 +30,37 @@ export function useMinimalShellHeaderTransform() {
 }
 
 export function useMinimalShellFooterTransform() {
-  const mode = useMinimalShellMode()
+  const {footerMode} = useMinimalShellMode()
   const {footerHeight} = useShellLayout()
 
   const footerTransform = useAnimatedStyle(() => {
+    const footerModeValue = footerMode.get()
     return {
-      pointerEvents: mode.value === 0 ? 'auto' : 'none',
-      opacity: Math.pow(1 - mode.value, 2),
+      pointerEvents: footerModeValue === 0 ? 'auto' : 'none',
+      opacity: Math.pow(1 - footerModeValue, 2),
       transform: [
         {
-          translateY: interpolate(mode.value, [0, 1], [0, footerHeight.value]),
+          translateY: interpolate(
+            footerModeValue,
+            [0, 1],
+            [0, footerHeight.get()],
+          ),
         },
       ],
     }
   })
+
   return footerTransform
 }
 
 export function useMinimalShellFabTransform() {
-  const mode = useMinimalShellMode()
+  const {footerMode} = useMinimalShellMode()
 
   const fabTransform = useAnimatedStyle(() => {
     return {
       transform: [
         {
-          translateY: interpolate(mode.value, [0, 1], [-44, 0]),
+          translateY: interpolate(footerMode.get(), [0, 1], [-44, 0]),
         },
       ],
     }

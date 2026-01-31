@@ -1,27 +1,13 @@
 import React from 'react'
-import {AppBskyActorDefs} from '@atproto/api'
+import {nanoid} from 'nanoid/non-secure'
+
 import {useNonReactiveCallback} from '#/lib/hooks/useNonReactiveCallback'
+import {type ImageSource} from '#/view/com/lightbox/ImageViewing/@types'
 
-interface Lightbox {
-  name: string
-}
-
-export class ProfileImageLightbox implements Lightbox {
-  name = 'profile-image'
-  constructor(public profile: AppBskyActorDefs.ProfileViewDetailed) {}
-}
-
-interface ImagesLightboxItem {
-  uri: string
-  alt?: string
-}
-
-export class ImagesLightbox implements Lightbox {
-  name = 'images'
-  constructor(public images: ImagesLightboxItem[], public index: number) {}
-  setIndex(index: number) {
-    this.index = index
-  }
+export type Lightbox = {
+  id: string
+  images: ImageSource[]
+  index: number
 }
 
 const LightboxContext = React.createContext<{
@@ -29,23 +15,35 @@ const LightboxContext = React.createContext<{
 }>({
   activeLightbox: null,
 })
+LightboxContext.displayName = 'LightboxContext'
 
 const LightboxControlContext = React.createContext<{
-  openLightbox: (lightbox: Lightbox) => void
+  openLightbox: (lightbox: Omit<Lightbox, 'id'>) => void
   closeLightbox: () => boolean
 }>({
   openLightbox: () => {},
   closeLightbox: () => false,
 })
+LightboxControlContext.displayName = 'LightboxControlContext'
 
 export function Provider({children}: React.PropsWithChildren<{}>) {
   const [activeLightbox, setActiveLightbox] = React.useState<Lightbox | null>(
     null,
   )
 
-  const openLightbox = useNonReactiveCallback((lightbox: Lightbox) => {
-    setActiveLightbox(lightbox)
-  })
+  const openLightbox = useNonReactiveCallback(
+    (lightbox: Omit<Lightbox, 'id'>) => {
+      setActiveLightbox(prevLightbox => {
+        if (prevLightbox) {
+          // Ignore duplicate open requests. If it's already open,
+          // the user has to explicitly close the previous one first.
+          return prevLightbox
+        } else {
+          return {...lightbox, id: nanoid()}
+        }
+      })
+    },
+  )
 
   const closeLightbox = useNonReactiveCallback(() => {
     let wasActive = !!activeLightbox

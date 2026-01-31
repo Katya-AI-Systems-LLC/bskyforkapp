@@ -1,66 +1,62 @@
-import React from 'react'
-import {StyleProp, TextProps as RNTextProps, TextStyle} from 'react-native'
 import {UITextView} from 'react-native-uitextview'
 
-import {isNative} from '#/platform/detection'
-import {atoms, flatten, useTheme, web} from '#/alf'
+import {logger} from '#/logger'
+import {atoms, useAlf, useTheme, web} from '#/alf'
+import {
+  childHasEmoji,
+  normalizeTextStyles,
+  renderChildrenWithEmoji,
+  type TextProps,
+} from '#/alf/typography'
 
-export type TextProps = RNTextProps & {
-  /**
-   * Lets the user select text, to use the native copy and paste functionality.
-   */
-  selectable?: boolean
-}
-
-/**
- * Util to calculate lineHeight from a text size atom and a leading atom
- *
- * Example:
- *   `leading(atoms.text_md, atoms.leading_normal)` // => 24
- */
-export function leading<
-  Size extends {fontSize?: number},
-  Leading extends {lineHeight?: number},
->(textSize: Size, leading: Leading) {
-  const size = textSize?.fontSize || atoms.text_md.fontSize
-  const lineHeight = leading?.lineHeight || atoms.leading_normal.lineHeight
-  return Math.round(size * lineHeight)
-}
-
-/**
- * Ensures that `lineHeight` defaults to a relative value of `1`, or applies
- * other relative leading atoms.
- *
- * If the `lineHeight` value is > 2, we assume it's an absolute value and
- * returns it as-is.
- */
-export function normalizeTextStyles(styles: StyleProp<TextStyle>) {
-  const s = flatten(styles)
-  // should always be defined on these components
-  const fontSize = s.fontSize || atoms.text_md.fontSize
-
-  if (s?.lineHeight) {
-    if (s.lineHeight !== 0 && s.lineHeight <= 2) {
-      s.lineHeight = Math.round(fontSize * s.lineHeight)
-    }
-  } else if (!isNative) {
-    s.lineHeight = s.fontSize
-  }
-
-  return s
-}
+export type {TextProps}
+export {Text as Span} from 'react-native'
 
 /**
  * Our main text component. Use this most of the time.
  */
-export function Text({style, selectable, ...rest}: TextProps) {
+export function Text({
+  children,
+  emoji,
+  style,
+  selectable,
+  title,
+  dataSet,
+  ...rest
+}: TextProps) {
+  const {fonts, flags} = useAlf()
   const t = useTheme()
-  const s = normalizeTextStyles([atoms.text_sm, t.atoms.text, flatten(style)])
+  const s = normalizeTextStyles([atoms.text_sm, t.atoms.text, style], {
+    fontScale: fonts.scaleMultiplier,
+    fontFamily: fonts.family,
+    flags,
+  })
 
-  return <UITextView selectable={selectable} uiTextView style={s} {...rest} />
+  if (__DEV__) {
+    if (!emoji && childHasEmoji(children)) {
+      logger.warn(
+        // eslint-disable-next-line @typescript-eslint/restrict-template-expressions, @typescript-eslint/no-base-to-string
+        `Text: emoji detected but emoji not enabled: "${children}"\n\nPlease add <Text emoji />'`,
+      )
+    }
+  }
+
+  const shared = {
+    uiTextView: true,
+    selectable,
+    style: s,
+    dataSet: Object.assign({tooltip: title}, dataSet || {}),
+    ...rest,
+  }
+
+  return (
+    <UITextView {...shared}>
+      {renderChildrenWithEmoji(children, shared, emoji ?? false)}
+    </UITextView>
+  )
 }
 
-export function createHeadingElement({level}: {level: number}) {
+function createHeadingElement({level}: {level: number}) {
   return function HeadingElement({style, ...rest}: TextProps) {
     const attr =
       web({
@@ -89,7 +85,7 @@ export function P({style, ...rest}: TextProps) {
     <Text
       {...attr}
       {...rest}
-      style={[atoms.text_md, atoms.leading_normal, flatten(style)]}
+      style={[atoms.text_md, atoms.leading_relaxed, style]}
     />
   )
 }

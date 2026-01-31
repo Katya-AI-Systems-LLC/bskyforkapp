@@ -1,4 +1,5 @@
 import React from 'react'
+
 import * as persisted from '#/state/persisted'
 
 type StateContext = {
@@ -14,7 +15,9 @@ const stateContext = React.createContext<StateContext>({
   colorMode: 'system',
   darkTheme: 'dark',
 })
+stateContext.displayName = 'ColorModeStateContext'
 const setContext = React.createContext<SetContext>({} as SetContext)
+setContext.displayName = 'ColorModeSetContext'
 
 export function Provider({children}: React.PropsWithChildren<{}>) {
   const [colorMode, setColorMode] = React.useState(persisted.get('colorMode'))
@@ -43,10 +46,16 @@ export function Provider({children}: React.PropsWithChildren<{}>) {
   )
 
   React.useEffect(() => {
-    return persisted.onUpdate(() => {
-      setColorMode(persisted.get('colorMode'))
-      setDarkTheme(persisted.get('darkTheme'))
+    const unsub1 = persisted.onUpdate('darkTheme', nextDarkTheme => {
+      setDarkTheme(nextDarkTheme)
     })
+    const unsub2 = persisted.onUpdate('colorMode', nextColorMode => {
+      setColorMode(nextColorMode)
+    })
+    return () => {
+      unsub1()
+      unsub2()
+    }
   }, [])
 
   return (

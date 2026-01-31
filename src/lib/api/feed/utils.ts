@@ -1,11 +1,18 @@
 import {AtUri} from '@atproto/api'
 
 import {BSKY_FEED_OWNER_DIDS} from '#/lib/constants'
-import {UsePreferencesQueryResponse} from '#/state/queries/preferences'
+import {type UsePreferencesQueryResponse} from '#/state/queries/preferences'
+import {IS_WEB} from '#/env'
+
+let debugTopics = ''
+if (IS_WEB && typeof window !== 'undefined') {
+  const params = new URLSearchParams(window.location.search)
+  debugTopics = params.get('debug_topics') ?? ''
+}
 
 export function createBskyTopicsHeader(userInterests?: string) {
   return {
-    'X-Bsky-Topics': userInterests || '',
+    'X-Bsky-Topics': debugTopics || userInterests || '',
   }
 }
 

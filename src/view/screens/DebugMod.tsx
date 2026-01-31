@@ -1,34 +1,41 @@
 import React from 'react'
 import {View} from 'react-native'
 import {
-  AppBskyActorDefs,
-  AppBskyFeedDefs,
-  AppBskyFeedPost,
-  ComAtprotoLabelDefs,
+  type AppBskyActorDefs,
+  type AppBskyFeedDefs,
+  type AppBskyFeedPost,
+  type ComAtprotoLabelDefs,
   interpretLabelValueDefinition,
-  LabelPreference,
+  type LabelPreference,
   LABELS,
   mock,
   moderatePost,
   moderateProfile,
-  ModerationBehavior,
-  ModerationDecision,
-  ModerationOpts,
+  type ModerationBehavior,
+  type ModerationDecision,
+  type ModerationOpts,
   RichText,
 } from '@atproto/api'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
 import {useGlobalLabelStrings} from '#/lib/moderation/useGlobalLabelStrings'
+import {
+  type CommonNavigatorParams,
+  type NativeStackScreenProps,
+} from '#/lib/routes/types'
+import {useModerationOpts} from '#/state/preferences/moderation-opts'
 import {moderationOptsOverrideContext} from '#/state/preferences/moderation-opts'
-import {FeedNotification} from '#/state/queries/notifications/types'
+import {type FeedNotification} from '#/state/queries/notifications/types'
 import {
   groupNotifications,
   shouldFilterNotif,
 } from '#/state/queries/notifications/util'
+import {threadPost} from '#/state/queries/usePostThread/views'
 import {useSession} from '#/state/session'
-import {CommonNavigatorParams, NativeStackScreenProps} from 'lib/routes/types'
 import {CenteredView, ScrollView} from '#/view/com/util/Views'
+import {ThreadItemAnchor} from '#/screens/PostThread/components/ThreadItemAnchor'
+import {ThreadItemPost} from '#/screens/PostThread/components/ThreadItemPost'
 import {ProfileHeaderStandard} from '#/screens/Profile/Header/ProfileHeaderStandard'
 import {atoms as a, useTheme} from '#/alf'
 import {Button, ButtonIcon, ButtonText} from '#/components/Button'
@@ -40,12 +47,12 @@ import {
   ChevronBottom_Stroke2_Corner0_Rounded as ChevronBottom,
   ChevronTop_Stroke2_Corner0_Rounded as ChevronTop,
 } from '#/components/icons/Chevron'
+import * as Layout from '#/components/Layout'
+import * as ProfileCard from '#/components/ProfileCard'
 import {H1, H3, P, Text} from '#/components/Typography'
 import {ScreenHider} from '../../components/moderation/ScreenHider'
-import {FeedItem as NotifFeedItem} from '../com/notifications/FeedItem'
-import {PostThreadItem} from '../com/post-thread/PostThreadItem'
-import {FeedItem} from '../com/posts/FeedItem'
-import {ProfileCard} from '../com/profile/ProfileCard'
+import {NotificationFeedItem} from '../com/notifications/NotificationFeedItem'
+import {PostFeedItem} from '../com/posts/PostFeedItem'
 
 const LABEL_VALUES: (keyof typeof LABELS)[] = Object.keys(
   LABELS,
@@ -107,14 +114,14 @@ export const DebugModScreen = ({}: NativeStackScreenProps<
               }),
             ]
           : scenario[0] === 'label' && target[0] === 'profile'
-          ? [
-              mock.label({
-                src: isSelfLabel ? did : undefined,
-                val: label[0],
-                uri: `at://${did}/app.bsky.actor.profile/self`,
-              }),
-            ]
-          : undefined,
+            ? [
+                mock.label({
+                  src: isSelfLabel ? did : undefined,
+                  val: label[0],
+                  uri: `at://${did}/app.bsky.actor.profile/self`,
+                }),
+              ]
+            : undefined,
       viewer: mock.actorViewerState({
         following: isFollowing
           ? `at://${currentAccount?.did || ''}/app.bsky.graph.follow/1234`
@@ -131,6 +138,7 @@ export const DebugModScreen = ({}: NativeStackScreenProps<
     })
     mockedProfile.did = did
     mockedProfile.avatar = 'https://bsky.social/about/images/favicon-32x32.png'
+    // @ts-expect-error ProfileViewBasic is close enough -esb
     mockedProfile.banner =
       'https://bsky.social/about/images/social-card-default-gradient.png'
     return mockedProfile
@@ -263,316 +271,332 @@ export const DebugModScreen = ({}: NativeStackScreenProps<
   }, [post, modOpts])
 
   return (
-    <moderationOptsOverrideContext.Provider value={modOpts}>
-      <ScrollView>
-        <CenteredView style={[t.atoms.bg, a.px_lg, a.py_lg]}>
-          <H1 style={[a.text_5xl, a.font_bold, a.pb_lg]}>Moderation states</H1>
+    <Layout.Screen>
+      <moderationOptsOverrideContext.Provider value={modOpts}>
+        <ScrollView>
+          <CenteredView style={[t.atoms.bg, a.px_lg, a.py_lg]}>
+            <H1 style={[a.text_5xl, a.font_semi_bold, a.pb_lg]}>
+              Moderation states
+            </H1>
 
-          <Heading title="" subtitle="Scenario" />
-          <ToggleButton.Group
-            label="Scenario"
-            values={scenario}
-            onChange={setScenario}>
-            <ToggleButton.Button name="label" label="Label">
-              <ToggleButton.ButtonText>Label</ToggleButton.ButtonText>
-            </ToggleButton.Button>
-            <ToggleButton.Button name="block" label="Block">
-              <ToggleButton.ButtonText>Block</ToggleButton.ButtonText>
-            </ToggleButton.Button>
-            <ToggleButton.Button name="mute" label="Mute">
-              <ToggleButton.ButtonText>Mute</ToggleButton.ButtonText>
-            </ToggleButton.Button>
-          </ToggleButton.Group>
+            <Heading title="" subtitle="Scenario" />
+            <ToggleButton.Group
+              label="Scenario"
+              values={scenario}
+              onChange={setScenario}>
+              <ToggleButton.Button name="label" label="Label">
+                <ToggleButton.ButtonText>Label</ToggleButton.ButtonText>
+              </ToggleButton.Button>
+              <ToggleButton.Button name="block" label="Block">
+                <ToggleButton.ButtonText>Block</ToggleButton.ButtonText>
+              </ToggleButton.Button>
+              <ToggleButton.Button name="mute" label="Mute">
+                <ToggleButton.ButtonText>Mute</ToggleButton.ButtonText>
+              </ToggleButton.Button>
+            </ToggleButton.Group>
 
-          {scenario[0] === 'label' && (
-            <>
-              <View
-                style={[
-                  a.border,
-                  a.rounded_sm,
-                  a.mt_lg,
-                  a.mb_lg,
-                  a.p_lg,
-                  t.atoms.border_contrast_medium,
-                ]}>
-                <Toggle.Group
-                  label="Toggle"
-                  type="radio"
-                  values={label}
-                  onChange={setLabel}>
-                  <View style={[a.flex_row, a.gap_md, a.flex_wrap]}>
-                    {LABEL_VALUES.map(labelValue => {
-                      let targetFixed = target[0]
-                      if (
-                        targetFixed !== 'account' &&
-                        targetFixed !== 'profile'
-                      ) {
-                        targetFixed = 'content'
-                      }
-                      const disabled =
-                        isSelfLabel &&
-                        LABELS[labelValue].flags.includes('no-self')
-                      return (
-                        <Toggle.Item
-                          key={labelValue}
-                          name={labelValue}
-                          label={labelStrings[labelValue].name}
-                          disabled={disabled}
-                          style={disabled ? {opacity: 0.5} : undefined}>
-                          <Toggle.Radio />
-                          <Toggle.LabelText>{labelValue}</Toggle.LabelText>
-                        </Toggle.Item>
-                      )
-                    })}
-                    <Toggle.Item
-                      name="custom"
-                      label="Custom label"
-                      disabled={isSelfLabel}
-                      style={isSelfLabel ? {opacity: 0.5} : undefined}>
-                      <Toggle.Radio />
-                      <Toggle.LabelText>Custom label</Toggle.LabelText>
-                    </Toggle.Item>
-                  </View>
-                </Toggle.Group>
-
-                {label[0] === 'custom' ? (
-                  <CustomLabelForm
-                    def={customLabelDef}
-                    setDef={setCustomLabelDef}
-                  />
-                ) : (
-                  <>
-                    <View style={{height: 10}} />
-                    <Divider />
-                  </>
-                )}
-
-                <View style={{height: 10}} />
-
-                <SmallToggler label="Advanced">
+            {scenario[0] === 'label' && (
+              <>
+                <View
+                  style={[
+                    a.border,
+                    a.rounded_sm,
+                    a.mt_lg,
+                    a.mb_lg,
+                    a.p_lg,
+                    t.atoms.border_contrast_medium,
+                  ]}>
                   <Toggle.Group
                     label="Toggle"
-                    type="checkbox"
-                    values={scenarioSwitches}
-                    onChange={setScenarioSwitches}>
-                    <View style={[a.gap_md, a.flex_row, a.flex_wrap, a.pt_md]}>
-                      <Toggle.Item name="targetMe" label="Target is me">
-                        <Toggle.Checkbox />
-                        <Toggle.LabelText>Target is me</Toggle.LabelText>
-                      </Toggle.Item>
-                      <Toggle.Item name="following" label="Following target">
-                        <Toggle.Checkbox />
-                        <Toggle.LabelText>Following target</Toggle.LabelText>
-                      </Toggle.Item>
-                      <Toggle.Item name="selfLabel" label="Self label">
-                        <Toggle.Checkbox />
-                        <Toggle.LabelText>Self label</Toggle.LabelText>
-                      </Toggle.Item>
-                      <Toggle.Item name="noAdult" label="Adult disabled">
-                        <Toggle.Checkbox />
-                        <Toggle.LabelText>Adult disabled</Toggle.LabelText>
-                      </Toggle.Item>
-                      <Toggle.Item name="loggedOut" label="Logged out">
-                        <Toggle.Checkbox />
-                        <Toggle.LabelText>Logged out</Toggle.LabelText>
+                    type="radio"
+                    values={label}
+                    onChange={setLabel}>
+                    <View style={[a.flex_row, a.gap_md, a.flex_wrap]}>
+                      {LABEL_VALUES.map(labelValue => {
+                        let targetFixed = target[0]
+                        if (
+                          targetFixed !== 'account' &&
+                          targetFixed !== 'profile'
+                        ) {
+                          targetFixed = 'content'
+                        }
+                        const disabled =
+                          isSelfLabel &&
+                          LABELS[labelValue].flags.includes('no-self')
+                        return (
+                          <Toggle.Item
+                            key={labelValue}
+                            name={labelValue}
+                            label={labelStrings[labelValue].name}
+                            disabled={disabled}
+                            style={disabled ? {opacity: 0.5} : undefined}>
+                            <Toggle.Radio />
+                            <Toggle.LabelText>{labelValue}</Toggle.LabelText>
+                          </Toggle.Item>
+                        )
+                      })}
+                      <Toggle.Item
+                        name="custom"
+                        label="Custom label"
+                        disabled={isSelfLabel}
+                        style={isSelfLabel ? {opacity: 0.5} : undefined}>
+                        <Toggle.Radio />
+                        <Toggle.LabelText>Custom label</Toggle.LabelText>
                       </Toggle.Item>
                     </View>
                   </Toggle.Group>
 
-                  {LABELS[label[0] as keyof typeof LABELS]?.configurable !==
-                    false && (
-                    <View style={[a.mt_md]}>
-                      <Text
-                        style={[a.font_bold, a.text_xs, t.atoms.text, a.pb_sm]}>
-                        Preference
-                      </Text>
-                      <Toggle.Group
-                        label="Preference"
-                        type="radio"
-                        values={visibility}
-                        onChange={setVisiblity}>
-                        <View
+                  {label[0] === 'custom' ? (
+                    <CustomLabelForm
+                      def={customLabelDef}
+                      setDef={setCustomLabelDef}
+                    />
+                  ) : (
+                    <>
+                      <View style={{height: 10}} />
+                      <Divider />
+                    </>
+                  )}
+
+                  <View style={{height: 10}} />
+
+                  <SmallToggler label="Advanced">
+                    <Toggle.Group
+                      label="Toggle"
+                      type="checkbox"
+                      values={scenarioSwitches}
+                      onChange={setScenarioSwitches}>
+                      <View
+                        style={[a.gap_md, a.flex_row, a.flex_wrap, a.pt_md]}>
+                        <Toggle.Item name="targetMe" label="Target is me">
+                          <Toggle.Checkbox />
+                          <Toggle.LabelText>Target is me</Toggle.LabelText>
+                        </Toggle.Item>
+                        <Toggle.Item name="following" label="Following target">
+                          <Toggle.Checkbox />
+                          <Toggle.LabelText>Following target</Toggle.LabelText>
+                        </Toggle.Item>
+                        <Toggle.Item name="selfLabel" label="Self label">
+                          <Toggle.Checkbox />
+                          <Toggle.LabelText>Self label</Toggle.LabelText>
+                        </Toggle.Item>
+                        <Toggle.Item name="noAdult" label="Adult disabled">
+                          <Toggle.Checkbox />
+                          <Toggle.LabelText>Adult disabled</Toggle.LabelText>
+                        </Toggle.Item>
+                        <Toggle.Item name="loggedOut" label="Signed out">
+                          <Toggle.Checkbox />
+                          <Toggle.LabelText>Signed out</Toggle.LabelText>
+                        </Toggle.Item>
+                      </View>
+                    </Toggle.Group>
+
+                    {LABELS[label[0] as keyof typeof LABELS]?.configurable !==
+                      false && (
+                      <View style={[a.mt_md]}>
+                        <Text
                           style={[
-                            a.flex_row,
-                            a.gap_md,
-                            a.flex_wrap,
-                            a.align_center,
+                            a.font_semi_bold,
+                            a.text_xs,
+                            t.atoms.text,
+                            a.pb_sm,
                           ]}>
-                          <Toggle.Item name="hide" label="Hide">
+                          Preference
+                        </Text>
+                        <Toggle.Group
+                          label="Preference"
+                          type="radio"
+                          values={visibility}
+                          onChange={setVisiblity}>
+                          <View
+                            style={[
+                              a.flex_row,
+                              a.gap_md,
+                              a.flex_wrap,
+                              a.align_center,
+                            ]}>
+                            <Toggle.Item name="hide" label="Hide">
+                              <Toggle.Radio />
+                              <Toggle.LabelText>Hide</Toggle.LabelText>
+                            </Toggle.Item>
+                            <Toggle.Item name="warn" label="Warn">
+                              <Toggle.Radio />
+                              <Toggle.LabelText>Warn</Toggle.LabelText>
+                            </Toggle.Item>
+                            <Toggle.Item name="ignore" label="Ignore">
+                              <Toggle.Radio />
+                              <Toggle.LabelText>Ignore</Toggle.LabelText>
+                            </Toggle.Item>
+                          </View>
+                        </Toggle.Group>
+                      </View>
+                    )}
+                  </SmallToggler>
+                </View>
+
+                <View style={[a.flex_row, a.flex_wrap, a.gap_md]}>
+                  <View>
+                    <Text
+                      style={[
+                        a.font_semi_bold,
+                        a.text_xs,
+                        t.atoms.text,
+                        a.pl_md,
+                        a.pb_xs,
+                      ]}>
+                      Target
+                    </Text>
+                    <View
+                      style={[
+                        a.border,
+                        a.rounded_full,
+                        a.px_md,
+                        a.py_sm,
+                        t.atoms.border_contrast_medium,
+                        t.atoms.bg,
+                      ]}>
+                      <Toggle.Group
+                        label="Target"
+                        type="radio"
+                        values={target}
+                        onChange={setTarget}>
+                        <View style={[a.flex_row, a.gap_md, a.flex_wrap]}>
+                          <Toggle.Item name="account" label="Account">
                             <Toggle.Radio />
-                            <Toggle.LabelText>Hide</Toggle.LabelText>
+                            <Toggle.LabelText>Account</Toggle.LabelText>
                           </Toggle.Item>
-                          <Toggle.Item name="warn" label="Warn">
+                          <Toggle.Item name="profile" label="Profile">
                             <Toggle.Radio />
-                            <Toggle.LabelText>Warn</Toggle.LabelText>
+                            <Toggle.LabelText>Profile</Toggle.LabelText>
                           </Toggle.Item>
-                          <Toggle.Item name="ignore" label="Ignore">
+                          <Toggle.Item name="post" label="Post">
                             <Toggle.Radio />
-                            <Toggle.LabelText>Ignore</Toggle.LabelText>
+                            <Toggle.LabelText>Post</Toggle.LabelText>
+                          </Toggle.Item>
+                          <Toggle.Item name="embed" label="Embed">
+                            <Toggle.Radio />
+                            <Toggle.LabelText>Embed</Toggle.LabelText>
                           </Toggle.Item>
                         </View>
                       </Toggle.Group>
                     </View>
-                  )}
-                </SmallToggler>
-              </View>
-
-              <View style={[a.flex_row, a.flex_wrap, a.gap_md]}>
-                <View>
-                  <Text
-                    style={[
-                      a.font_bold,
-                      a.text_xs,
-                      t.atoms.text,
-                      a.pl_md,
-                      a.pb_xs,
-                    ]}>
-                    Target
-                  </Text>
-                  <View
-                    style={[
-                      a.border,
-                      a.rounded_full,
-                      a.px_md,
-                      a.py_sm,
-                      t.atoms.border_contrast_medium,
-                      t.atoms.bg,
-                    ]}>
-                    <Toggle.Group
-                      label="Target"
-                      type="radio"
-                      values={target}
-                      onChange={setTarget}>
-                      <View style={[a.flex_row, a.gap_md, a.flex_wrap]}>
-                        <Toggle.Item name="account" label="Account">
-                          <Toggle.Radio />
-                          <Toggle.LabelText>Account</Toggle.LabelText>
-                        </Toggle.Item>
-                        <Toggle.Item name="profile" label="Profile">
-                          <Toggle.Radio />
-                          <Toggle.LabelText>Profile</Toggle.LabelText>
-                        </Toggle.Item>
-                        <Toggle.Item name="post" label="Post">
-                          <Toggle.Radio />
-                          <Toggle.LabelText>Post</Toggle.LabelText>
-                        </Toggle.Item>
-                        <Toggle.Item name="embed" label="Embed">
-                          <Toggle.Radio />
-                          <Toggle.LabelText>Embed</Toggle.LabelText>
-                        </Toggle.Item>
-                      </View>
-                    </Toggle.Group>
                   </View>
                 </View>
-              </View>
-            </>
-          )}
-
-          <Spacer />
-
-          <Heading title="" subtitle="Results" />
-
-          <ToggleButton.Group label="Results" values={view} onChange={setView}>
-            <ToggleButton.Button name="post" label="Post">
-              <ToggleButton.ButtonText>Post</ToggleButton.ButtonText>
-            </ToggleButton.Button>
-            <ToggleButton.Button name="notifications" label="Notifications">
-              <ToggleButton.ButtonText>Notifications</ToggleButton.ButtonText>
-            </ToggleButton.Button>
-            <ToggleButton.Button name="account" label="Account">
-              <ToggleButton.ButtonText>Account</ToggleButton.ButtonText>
-            </ToggleButton.Button>
-            <ToggleButton.Button name="data" label="Data">
-              <ToggleButton.ButtonText>Data</ToggleButton.ButtonText>
-            </ToggleButton.Button>
-          </ToggleButton.Group>
-
-          <View
-            style={[
-              a.border,
-              a.rounded_sm,
-              a.mt_lg,
-              a.p_md,
-              t.atoms.border_contrast_medium,
-            ]}>
-            {view[0] === 'post' && (
-              <>
-                <Heading title="Post" subtitle="in feed" />
-                <MockPostFeedItem post={post} moderation={postModeration} />
-
-                <Heading title="Post" subtitle="viewed directly" />
-                <MockPostThreadItem post={post} moderation={postModeration} />
-
-                <Heading title="Post" subtitle="reply in thread" />
-                <MockPostThreadItem
-                  post={post}
-                  moderation={postModeration}
-                  reply
-                />
               </>
             )}
 
-            {view[0] === 'notifications' && (
-              <>
-                <Heading title="Notification" subtitle="quote or reply" />
-                <MockNotifItem notif={replyNotif} moderationOpts={modOpts} />
-                <View style={{height: 20}} />
-                <Heading title="Notification" subtitle="follow or like" />
-                <MockNotifItem notif={followNotif} moderationOpts={modOpts} />
-              </>
-            )}
+            <Spacer />
 
-            {view[0] === 'account' && (
-              <>
-                <Heading title="Account" subtitle="in listing" />
-                <MockAccountCard
-                  profile={profile}
-                  moderation={profileModeration}
-                />
+            <Heading title="" subtitle="Results" />
 
-                <Heading title="Account" subtitle="viewing directly" />
-                <MockAccountScreen
-                  profile={profile}
-                  moderation={profileModeration}
-                  moderationOpts={modOpts}
-                />
-              </>
-            )}
+            <ToggleButton.Group
+              label="Results"
+              values={view}
+              onChange={setView}>
+              <ToggleButton.Button name="post" label="Post">
+                <ToggleButton.ButtonText>Post</ToggleButton.ButtonText>
+              </ToggleButton.Button>
+              <ToggleButton.Button name="notifications" label="Notifications">
+                <ToggleButton.ButtonText>Notifications</ToggleButton.ButtonText>
+              </ToggleButton.Button>
+              <ToggleButton.Button name="account" label="Account">
+                <ToggleButton.ButtonText>Account</ToggleButton.ButtonText>
+              </ToggleButton.Button>
+              <ToggleButton.Button name="data" label="Data">
+                <ToggleButton.ButtonText>Data</ToggleButton.ButtonText>
+              </ToggleButton.Button>
+            </ToggleButton.Group>
 
-            {view[0] === 'data' && (
-              <>
-                <ModerationUIView
-                  label="Profile Moderation UI"
-                  mod={profileModeration}
-                />
-                <ModerationUIView
-                  label="Post Moderation UI"
-                  mod={postModeration}
-                />
-                <DataView
-                  label={label[0]}
-                  data={LABELS[label[0] as keyof typeof LABELS]}
-                />
-                <DataView
-                  label="Profile Moderation Data"
-                  data={profileModeration}
-                />
-                <DataView label="Post Moderation Data" data={postModeration} />
-              </>
-            )}
-          </View>
+            <View
+              style={[
+                a.border,
+                a.rounded_sm,
+                a.mt_lg,
+                a.p_md,
+                t.atoms.border_contrast_medium,
+              ]}>
+              {view[0] === 'post' && (
+                <>
+                  <Heading title="Post" subtitle="in feed" />
+                  <MockPostFeedItem post={post} moderation={postModeration} />
 
-          <View style={{height: 400}} />
-        </CenteredView>
-      </ScrollView>
-    </moderationOptsOverrideContext.Provider>
+                  <Heading title="Post" subtitle="viewed directly" />
+                  <MockPostThreadItem post={post} moderationOpts={modOpts} />
+
+                  <Heading title="Post" subtitle="reply in thread" />
+                  <MockPostThreadItem
+                    post={post}
+                    moderationOpts={modOpts}
+                    isReply
+                  />
+                </>
+              )}
+
+              {view[0] === 'notifications' && (
+                <>
+                  <Heading title="Notification" subtitle="quote or reply" />
+                  <MockNotifItem notif={replyNotif} moderationOpts={modOpts} />
+                  <View style={{height: 20}} />
+                  <Heading title="Notification" subtitle="follow or like" />
+                  <MockNotifItem notif={followNotif} moderationOpts={modOpts} />
+                </>
+              )}
+
+              {view[0] === 'account' && (
+                <>
+                  <Heading title="Account" subtitle="in listing" />
+                  <MockAccountCard
+                    profile={profile}
+                    moderation={profileModeration}
+                  />
+
+                  <Heading title="Account" subtitle="viewing directly" />
+                  <MockAccountScreen
+                    profile={profile}
+                    moderation={profileModeration}
+                    moderationOpts={modOpts}
+                  />
+                </>
+              )}
+
+              {view[0] === 'data' && (
+                <>
+                  <ModerationUIView
+                    label="Profile Moderation UI"
+                    mod={profileModeration}
+                  />
+                  <ModerationUIView
+                    label="Post Moderation UI"
+                    mod={postModeration}
+                  />
+                  <DataView
+                    label={label[0]}
+                    data={LABELS[label[0] as keyof typeof LABELS]}
+                  />
+                  <DataView
+                    label="Profile Moderation Data"
+                    data={profileModeration}
+                  />
+                  <DataView
+                    label="Post Moderation Data"
+                    data={postModeration}
+                  />
+                </>
+              )}
+            </View>
+
+            <View style={{height: 400}} />
+          </CenteredView>
+        </ScrollView>
+      </moderationOptsOverrideContext.Provider>
+    </Layout.Screen>
   )
 }
 
 function Heading({title, subtitle}: {title: string; subtitle?: string}) {
   const t = useTheme()
   return (
-    <H3 style={[a.text_3xl, a.font_bold, a.pb_md]}>
+    <H3 style={[a.text_3xl, a.font_semi_bold, a.pb_md]}>
       {title}{' '}
       {!!subtitle && (
         <H3 style={[t.atoms.text_contrast_medium, a.text_lg]}>{subtitle}</H3>
@@ -603,7 +627,8 @@ function CustomLabelForm({
         a.mt_md,
       ]}>
       <View>
-        <Text style={[a.font_bold, a.text_xs, t.atoms.text, a.pl_md, a.pb_xs]}>
+        <Text
+          style={[a.font_semi_bold, a.text_xs, t.atoms.text, a.pl_md, a.pb_xs]}>
           Blurs
         </Text>
         <View
@@ -638,7 +663,8 @@ function CustomLabelForm({
         </View>
       </View>
       <View>
-        <Text style={[a.font_bold, a.text_xs, t.atoms.text, a.pl_md, a.pb_xs]}>
+        <Text
+          style={[a.font_semi_bold, a.text_xs, t.atoms.text, a.pl_md, a.pb_xs]}>
           Severity
         </Text>
         <View
@@ -765,7 +791,7 @@ function ModerationUIView({
           const ui = mod.ui(key as keyof ModerationBehavior)
           return (
             <View key={key} style={[a.flex_row, a.gap_md]}>
-              <Text style={[a.font_bold, {width: 100}]}>{key}</Text>
+              <Text style={[a.font_semi_bold, {width: 100}]}>{key}</Text>
               <Flag v={ui.filter} label="Filter" />
               <Flag v={ui.blur} label="Blur" />
               <Flag v={ui.alert} label="Alert" />
@@ -799,7 +825,7 @@ function MockPostFeedItem({
     )
   }
   return (
-    <FeedItem
+    <PostFeedItem
       post={post}
       record={post.record as AppBskyFeedPost.Record}
       moderation={moderation}
@@ -807,34 +833,41 @@ function MockPostFeedItem({
       showReplyTo={false}
       reason={undefined}
       feedContext={''}
+      reqId={undefined}
+      rootPost={post}
     />
   )
 }
 
 function MockPostThreadItem({
   post,
-  moderation,
-  reply,
+  moderationOpts,
+  isReply,
 }: {
   post: AppBskyFeedDefs.PostView
-  moderation: ModerationDecision
-  reply?: boolean
+  moderationOpts: ModerationOpts
+  isReply?: boolean
 }) {
-  return (
-    <PostThreadItem
-      // @ts-ignore
-      post={post}
-      record={post.record as AppBskyFeedPost.Record}
-      moderation={moderation}
-      depth={reply ? 1 : 0}
-      isHighlightedPost={!reply}
-      treeView={false}
-      prevPost={undefined}
-      nextPost={undefined}
-      hasPrecedingItem={false}
-      overrideBlur={false}
-      onPostReply={() => {}}
-    />
+  const thread = threadPost({
+    uri: post.uri,
+    depth: isReply ? 1 : 0,
+    value: {
+      $type: 'app.bsky.unspecced.defs#threadItemPost',
+      post,
+      moreParents: false,
+      moreReplies: 0,
+      opThread: false,
+      hiddenByThreadgate: false,
+      mutedByViewer: false,
+    },
+    moderationOpts,
+    threadgateHiddenReplies: new Set<string>(),
+  })
+
+  return isReply ? (
+    <ThreadItemPost item={thread} />
+  ) : (
+    <ThreadItemAnchor item={thread} />
   )
 }
 
@@ -853,7 +886,13 @@ function MockNotifItem({
       </P>
     )
   }
-  return <NotifFeedItem item={notif} moderationOpts={moderationOpts} />
+  return (
+    <NotificationFeedItem
+      item={notif}
+      moderationOpts={moderationOpts}
+      highlightUnread
+    />
+  )
 }
 
 function MockAccountCard({
@@ -864,6 +903,9 @@ function MockAccountCard({
   moderation: ModerationDecision
 }) {
   const t = useTheme()
+  const moderationOpts = useModerationOpts()
+
+  if (!moderationOpts) return null
 
   if (moderation.ui('profileList').filter) {
     return (
@@ -873,7 +915,7 @@ function MockAccountCard({
     )
   }
 
-  return <ProfileCard profile={profile} />
+  return <ProfileCard.Card profile={profile} moderationOpts={moderationOpts} />
 }
 
 function MockAccountScreen({
@@ -897,6 +939,7 @@ function MockAccountScreen({
           // @ts-ignore ProfileViewBasic is close enough -prf
           profile={profile}
           moderationOpts={moderationOpts}
+          // @ts-ignore ProfileViewBasic is close enough -esb
           descriptionRT={new RichText({text: profile.description as string})}
         />
       </ScreenHider>

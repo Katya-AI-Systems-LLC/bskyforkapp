@@ -1,17 +1,23 @@
 import React from 'react'
 import {View} from 'react-native'
-import {AppBskyActorDefs, moderateProfile, ModerationOpts} from '@atproto/api'
+import {
+  type AppBskyActorDefs,
+  moderateProfile,
+  type ModerationOpts,
+} from '@atproto/api'
 import {msg, Plural, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
 import {makeProfileLink} from '#/lib/routes/links'
-import {sanitizeDisplayName} from 'lib/strings/display-names'
+import {sanitizeDisplayName} from '#/lib/strings/display-names'
 import {UserAvatar} from '#/view/com/util/UserAvatar'
 import {atoms as a, useTheme} from '#/alf'
-import {Link, LinkProps} from '#/components/Link'
+import {Link, type LinkProps} from '#/components/Link'
 import {Text} from '#/components/Typography'
+import type * as bsky from '#/types/bsky'
 
 const AVI_SIZE = 30
+const AVI_SIZE_SMALL = 20
 const AVI_BORDER = 1
 
 /**
@@ -30,10 +36,14 @@ export function KnownFollowers({
   profile,
   moderationOpts,
   onLinkPress,
+  minimal,
+  showIfEmpty,
 }: {
-  profile: AppBskyActorDefs.ProfileViewDetailed
+  profile: bsky.profile.AnyProfileView
   moderationOpts: ModerationOpts
   onLinkPress?: LinkProps['onPress']
+  minimal?: boolean
+  showIfEmpty?: boolean
 }) {
   const cache = React.useRef<Map<string, AppBskyActorDefs.KnownFollowers>>(
     new Map(),
@@ -59,11 +69,13 @@ export function KnownFollowers({
         cachedKnownFollowers={cachedKnownFollowers}
         moderationOpts={moderationOpts}
         onLinkPress={onLinkPress}
+        minimal={minimal}
+        showIfEmpty={showIfEmpty}
       />
     )
   }
 
-  return null
+  return <EmptyFallback show={showIfEmpty} />
 }
 
 function KnownFollowersInner({
@@ -71,21 +83,20 @@ function KnownFollowersInner({
   moderationOpts,
   cachedKnownFollowers,
   onLinkPress,
+  minimal,
+  showIfEmpty,
 }: {
-  profile: AppBskyActorDefs.ProfileViewDetailed
+  profile: bsky.profile.AnyProfileView
   moderationOpts: ModerationOpts
   cachedKnownFollowers: AppBskyActorDefs.KnownFollowers
   onLinkPress?: LinkProps['onPress']
+  minimal?: boolean
+  showIfEmpty?: boolean
 }) {
   const t = useTheme()
   const {_} = useLingui()
 
-  const textStyle = [
-    a.flex_1,
-    a.text_sm,
-    a.leading_snug,
-    t.atoms.text_contrast_medium,
-  ]
+  const textStyle = [a.text_sm, a.leading_snug, t.atoms.text_contrast_medium]
 
   const slice = cachedKnownFollowers.followers.slice(0, 3).map(f => {
     const moderation = moderateProfile(f, moderationOpts)
@@ -108,7 +119,9 @@ function KnownFollowersInner({
    * We check above too, but here for clarity and a reminder to _check for
    * valid indices_
    */
-  if (slice.length === 0) return null
+  if (slice.length === 0) return <EmptyFallback show={showIfEmpty} />
+
+  const SIZE = minimal ? AVI_SIZE_SMALL : AVI_SIZE
 
   return (
     <Link
@@ -118,9 +131,9 @@ function KnownFollowersInner({
       onPress={onLinkPress}
       to={makeProfileLink(profile, 'known-followers')}
       style={[
-        a.flex_1,
+        a.max_w_full,
         a.flex_row,
-        a.gap_md,
+        minimal ? a.gap_sm : a.gap_md,
         a.align_center,
         {marginLeft: -AVI_BORDER},
       ]}>
@@ -128,9 +141,9 @@ function KnownFollowersInner({
         <>
           <View
             style={[
+              a.flex_row,
               {
-                height: AVI_SIZE,
-                width: AVI_SIZE + (slice.length - 1) * a.gap_md.gap,
+                height: SIZE,
               },
               pressed && {
                 opacity: 0.5,
@@ -140,21 +153,22 @@ function KnownFollowersInner({
               <View
                 key={prof.did}
                 style={[
-                  a.absolute,
                   a.rounded_full,
                   {
                     borderWidth: AVI_BORDER,
                     borderColor: t.atoms.bg.backgroundColor,
-                    width: AVI_SIZE + AVI_BORDER * 2,
-                    height: AVI_SIZE + AVI_BORDER * 2,
-                    left: i * a.gap_md.gap,
+                    width: SIZE + AVI_BORDER * 2,
+                    height: SIZE + AVI_BORDER * 2,
                     zIndex: AVI_BORDER - i,
+                    marginLeft: i > 0 ? -8 : 0,
                   },
                 ]}>
                 <UserAvatar
-                  size={AVI_SIZE}
+                  size={SIZE}
                   avatar={prof.avatar}
                   moderation={moderation.ui('avatar')}
+                  type={prof.associated?.labeler ? 'labeler' : 'user'}
+                  noBorder
                 />
               </View>
             ))}
@@ -162,6 +176,7 @@ function KnownFollowersInner({
 
           <Text
             style={[
+              a.flex_shrink,
               textStyle,
               hovered && {
                 textDecorationLine: 'underline',
@@ -177,11 +192,11 @@ function KnownFollowersInner({
               serverCount > 2 ? (
                 <Trans>
                   Followed by{' '}
-                  <Text key={slice[0].profile.did} style={textStyle}>
+                  <Text emoji key={slice[0].profile.did} style={textStyle}>
                     {slice[0].profile.displayName}
                   </Text>
                   ,{' '}
-                  <Text key={slice[1].profile.did} style={textStyle}>
+                  <Text emoji key={slice[1].profile.did} style={textStyle}>
                     {slice[1].profile.displayName}
                   </Text>
                   , and{' '}
@@ -195,11 +210,11 @@ function KnownFollowersInner({
                 // only 2
                 <Trans>
                   Followed by{' '}
-                  <Text key={slice[0].profile.did} style={textStyle}>
+                  <Text emoji key={slice[0].profile.did} style={textStyle}>
                     {slice[0].profile.displayName}
                   </Text>{' '}
                   and{' '}
-                  <Text key={slice[1].profile.did} style={textStyle}>
+                  <Text emoji key={slice[1].profile.did} style={textStyle}>
                     {slice[1].profile.displayName}
                   </Text>
                 </Trans>
@@ -208,7 +223,7 @@ function KnownFollowersInner({
               // 1-n followers, including blocks
               <Trans>
                 Followed by{' '}
-                <Text key={slice[0].profile.did} style={textStyle}>
+                <Text emoji key={slice[0].profile.did} style={textStyle}>
                   {slice[0].profile.displayName}
                 </Text>{' '}
                 and{' '}
@@ -222,7 +237,7 @@ function KnownFollowersInner({
               // only 1
               <Trans>
                 Followed by{' '}
-                <Text key={slice[0].profile.did} style={textStyle}>
+                <Text emoji key={slice[0].profile.did} style={textStyle}>
                   {slice[0].profile.displayName}
                 </Text>
               </Trans>
@@ -231,5 +246,17 @@ function KnownFollowersInner({
         </>
       )}
     </Link>
+  )
+}
+
+function EmptyFallback({show}: {show?: boolean}) {
+  const t = useTheme()
+
+  if (!show) return null
+
+  return (
+    <Text style={[a.text_sm, a.leading_snug, t.atoms.text_contrast_medium]}>
+      <Trans>Not followed by anyone you're following</Trans>
+    </Text>
   )
 }

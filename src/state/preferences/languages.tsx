@@ -1,7 +1,8 @@
 import React from 'react'
 
-import {AppLanguage} from '#/locale/languages'
+import {type AppLanguage} from '#/locale/languages'
 import * as persisted from '#/state/persisted'
+import {AnalyticsContext, utils} from '#/analytics'
 
 type SetStateCb = (
   s: persisted.Schema['languagePrefs'],
@@ -20,6 +21,7 @@ type ApiContext = {
 const stateContext = React.createContext<StateContext>(
   persisted.defaults.languagePrefs,
 )
+stateContext.displayName = 'LanguagePrefsStateContext'
 const apiContext = React.createContext<ApiContext>({
   setPrimaryLanguage: (_: string) => {},
   setPostLanguage: (_: string) => {},
@@ -29,6 +31,7 @@ const apiContext = React.createContext<ApiContext>({
   savePostLanguageToHistory: () => {},
   setAppLanguage: (_: AppLanguage) => {},
 })
+apiContext.displayName = 'LanguagePrefsApiContext'
 
 export function Provider({children}: React.PropsWithChildren<{}>) {
   const [state, setState] = React.useState(persisted.get('languagePrefs'))
@@ -43,8 +46,8 @@ export function Provider({children}: React.PropsWithChildren<{}>) {
   )
 
   React.useEffect(() => {
-    return persisted.onUpdate(() => {
-      setState(persisted.get('languagePrefs'))
+    return persisted.onUpdate('languagePrefs', nextLanguagePrefs => {
+      setState(nextLanguagePrefs)
     })
   }, [setStateWrapped])
 
@@ -122,7 +125,17 @@ export function Provider({children}: React.PropsWithChildren<{}>) {
 
   return (
     <stateContext.Provider value={state}>
-      <apiContext.Provider value={api}>{children}</apiContext.Provider>
+      <apiContext.Provider value={api}>
+        <AnalyticsContext
+          metadata={utils.useMeta({
+            preferences: {
+              appLanguage: state.appLanguage,
+              contentLanguages: state.contentLanguages,
+            },
+          })}>
+          {children}
+        </AnalyticsContext>
+      </apiContext.Provider>
     </stateContext.Provider>
   )
 }
@@ -139,9 +152,23 @@ export function getContentLanguages() {
   return persisted.get('languagePrefs').contentLanguages
 }
 
+/**
+ * Be careful with this. It's used for the PWI home screen so that users can
+ * select a UI language and have it apply to the fetched Discover feed.
+ *
+ * We only support BCP-47 two-letter codes here, hence the split.
+ */
+export function getAppLanguageAsContentLanguage() {
+  return persisted.get('languagePrefs').appLanguage.split('-')[0]
+}
+
 export function toPostLanguages(postLanguage: string): string[] {
   // filter out empty strings if exist
   return postLanguage.split(',').filter(Boolean)
+}
+
+export function fromPostLanguages(languages: string[]): string {
+  return languages.filter(Boolean).join(',')
 }
 
 export function hasPostLanguage(postLanguage: string, code2: string): boolean {

@@ -1,11 +1,11 @@
+import {useCallback} from 'react'
 import {
-  AppBskyActorDefs,
-  BskyFeedViewPreference,
-  LabelPreference,
+  type AppBskyActorDefs,
+  type BskyFeedViewPreference,
+  type LabelPreference,
 } from '@atproto/api'
 import {useMutation, useQuery, useQueryClient} from '@tanstack/react-query'
 
-import {track} from '#/lib/analytics/analytics'
 import {PROD_DEFAULT_FEED} from '#/lib/constants'
 import {replaceEqualDeep} from '#/lib/functions'
 import {getAge} from '#/lib/strings/time'
@@ -16,11 +16,14 @@ import {
   DEFAULT_THREAD_VIEW_PREFS,
 } from '#/state/queries/preferences/const'
 import {
-  ThreadViewPreferences,
-  UsePreferencesQueryResponse,
+  type ThreadViewPreferences,
+  type UsePreferencesQueryResponse,
 } from '#/state/queries/preferences/types'
 import {useAgent} from '#/state/session'
 import {saveLabelers} from '#/state/session/agent-config'
+import {useAgeAssurance} from '#/ageAssurance'
+import {makeAgeRestrictedModerationPrefs} from '#/ageAssurance/util'
+import {useAnalytics} from '#/analytics'
 
 export * from '#/state/queries/preferences/const'
 export * from '#/state/queries/preferences/moderation'
@@ -31,20 +34,22 @@ export const preferencesQueryKey = [preferencesQueryKeyRoot]
 
 export function usePreferencesQuery() {
   const agent = useAgent()
+  const aa = useAgeAssurance()
+
   return useQuery({
     staleTime: STALE.SECONDS.FIFTEEN,
     structuralSharing: replaceEqualDeep,
     refetchOnWindowFocus: true,
     queryKey: preferencesQueryKey,
     queryFn: async () => {
-      if (agent.session?.did === undefined) {
+      if (!agent.did) {
         return DEFAULT_LOGGED_OUT_PREFERENCES
       } else {
         const res = await agent.getPreferences()
 
         // save to local storage to ensure there are labels on initial requests
         saveLabelers(
-          agent.session.did,
+          agent.did,
           res.moderationPrefs.labelers.map(l => l.did),
         )
 
@@ -68,6 +73,24 @@ export function usePreferencesQuery() {
         return preferences
       }
     },
+    select: useCallback(
+      (data: UsePreferencesQueryResponse) => {
+        /**
+         * Prefs are all downstream of age assurance now. For logged-out
+         * users, we override moderation prefs based on AA state.
+         */
+        if (aa.state.access !== aa.Access.Full) {
+          data = {
+            ...data,
+            moderationPrefs: makeAgeRestrictedModerationPrefs(
+              data.moderationPrefs,
+            ),
+          }
+        }
+        return data
+      },
+      [aa],
+    ),
   })
 }
 
@@ -87,6 +110,7 @@ export function useClearPreferencesMutation() {
 }
 
 export function usePreferencesSetContentLabelMutation() {
+  const ax = useAnalytics()
   const agent = useAgent()
   const queryClient = useQueryClient()
 
@@ -97,6 +121,7 @@ export function usePreferencesSetContentLabelMutation() {
   >({
     mutationFn: async ({label, visibility, labelerDid}) => {
       await agent.setContentLabelPref(label, visibility, labelerDid)
+      ax.metric('moderation:changeLabelPreference', {preference: visibility})
       // triggers a refetch
       await queryClient.invalidateQueries({
         queryKey: preferencesQueryKey,
@@ -135,21 +160,6 @@ export function usePreferencesSetAdultContentMutation() {
   return useMutation<void, unknown, {enabled: boolean}>({
     mutationFn: async ({enabled}) => {
       await agent.setAdultContentEnabled(enabled)
-      // triggers a refetch
-      await queryClient.invalidateQueries({
-        queryKey: preferencesQueryKey,
-      })
-    },
-  })
-}
-
-export function usePreferencesSetBirthDateMutation() {
-  const queryClient = useQueryClient()
-  const agent = useAgent()
-
-  return useMutation<void, unknown, {birthDate: Date}>({
-    mutationFn: async ({birthDate}: {birthDate: Date}) => {
-      await agent.setPersonalDetails({birthDate: birthDate.toISOString()})
       // triggers a refetch
       await queryClient.invalidateQueries({
         queryKey: preferencesQueryKey,
@@ -218,7 +228,6 @@ export function useAddSavedFeedsMutation() {
   >({
     mutationFn: async savedFeeds => {
       await agent.addSavedFeeds(savedFeeds)
-      track('CustomFeed:Save')
       // triggers a refetch
       await queryClient.invalidateQueries({
         queryKey: preferencesQueryKey,
@@ -234,7 +243,6 @@ export function useRemoveFeedMutation() {
   return useMutation<void, unknown, Pick<AppBskyActorDefs.SavedFeed, 'id'>>({
     mutationFn: async savedFeed => {
       await agent.removeSavedFeeds([savedFeed.id])
-      track('CustomFeed:Unsave')
       // triggers a refetch
       await queryClient.invalidateQueries({
         queryKey: preferencesQueryKey,
@@ -335,6 +343,89 @@ export function useRemoveMutedWordMutation() {
   return useMutation({
     mutationFn: async (mutedWord: AppBskyActorDefs.MutedWord) => {
       await agent.removeMutedWord(mutedWord)
+      // triggers a refetch
+      await queryClient.invalidateQueries({
+        queryKey: preferencesQueryKey,
+      })
+    },
+  })
+}
+
+export function useRemoveMutedWordsMutation() {
+  const queryClient = useQueryClient()
+  const agent = useAgent()
+
+  return useMutation({
+    mutationFn: async (mutedWords: AppBskyActorDefs.MutedWord[]) => {
+      await agent.removeMutedWords(mutedWords)
+      // triggers a refetch
+      await queryClient.invalidateQueries({
+        queryKey: preferencesQueryKey,
+      })
+    },
+  })
+}
+
+export function useQueueNudgesMutation() {
+  const queryClient = useQueryClient()
+  const agent = useAgent()
+
+  return useMutation({
+    mutationFn: async (nudges: string | string[]) => {
+      await agent.bskyAppQueueNudges(nudges)
+      // triggers a refetch
+      await queryClient.invalidateQueries({
+        queryKey: preferencesQueryKey,
+      })
+    },
+  })
+}
+
+export function useDismissNudgesMutation() {
+  const queryClient = useQueryClient()
+  const agent = useAgent()
+
+  return useMutation({
+    mutationFn: async (nudges: string | string[]) => {
+      await agent.bskyAppDismissNudges(nudges)
+      // triggers a refetch
+      await queryClient.invalidateQueries({
+        queryKey: preferencesQueryKey,
+      })
+    },
+  })
+}
+
+export function useSetActiveProgressGuideMutation() {
+  const queryClient = useQueryClient()
+  const agent = useAgent()
+
+  return useMutation({
+    mutationFn: async (
+      guide: AppBskyActorDefs.BskyAppProgressGuide | undefined,
+    ) => {
+      await agent.bskyAppSetActiveProgressGuide(guide)
+      // triggers a refetch
+      await queryClient.invalidateQueries({
+        queryKey: preferencesQueryKey,
+      })
+    },
+  })
+}
+
+export function useSetVerificationPrefsMutation() {
+  const ax = useAnalytics()
+  const queryClient = useQueryClient()
+  const agent = useAgent()
+
+  return useMutation<void, unknown, AppBskyActorDefs.VerificationPrefs>({
+    mutationFn: async prefs => {
+      await agent.setVerificationPrefs(prefs)
+      if (prefs.hideBadges) {
+        ax.metric('verification:settings:hideBadges', {})
+      } else {
+        ax.metric('verification:settings:unHideBadges', {})
+      }
       // triggers a refetch
       await queryClient.invalidateQueries({
         queryKey: preferencesQueryKey,

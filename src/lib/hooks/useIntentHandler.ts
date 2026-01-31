@@ -1,30 +1,50 @@
 import React from 'react'
+import {Alert} from 'react-native'
 import * as Linking from 'expo-linking'
-import {isNative} from 'platform/detection'
-import {useComposerControls} from 'state/shell'
-import {useSession} from 'state/session'
-import {useCloseAllActiveElements} from 'state/util'
+import * as WebBrowser from 'expo-web-browser'
 
-type IntentType = 'compose'
+import {useOpenComposer} from '#/lib/hooks/useOpenComposer'
+import {parseLinkingUrl} from '#/lib/parseLinkingUrl'
+import {useSession} from '#/state/session'
+import {useCloseAllActiveElements} from '#/state/util'
+import {useIntentDialogs} from '#/components/intents/IntentDialogs'
+import {useAnalytics} from '#/analytics'
+import {IS_IOS, IS_NATIVE} from '#/env'
+import {Referrer} from '../../../modules/expo-bluesky-swiss-army'
+import {useApplyPullRequestOTAUpdate} from './useOTAUpdates'
+
+type IntentType = 'compose' | 'verify-email' | 'age-assurance' | 'apply-ota'
 
 const VALID_IMAGE_REGEX = /^[\w.:\-_/]+\|\d+(\.\d+)?\|\d+(\.\d+)?$/
 
+// This needs to stay outside of react to persist between account switches
+let previousIntentUrl = ''
+
 export function useIntentHandler() {
-  const incomingUrl = Linking.useURL()
+  const incomingUrl = Linking.useLinkingURL()
+  const ax = useAnalytics()
   const composeIntent = useComposeIntent()
+  const verifyEmailIntent = useVerifyEmailIntent()
+  const {currentAccount} = useSession()
+  const {tryApplyUpdate} = useApplyPullRequestOTAUpdate()
 
   React.useEffect(() => {
-    const handleIncomingURL = (url: string) => {
-      // We want to be able to support bluesky:// deeplinks. It's unnatural for someone to use a deeplink with three
-      // slashes, like bluesky:///intent/follow. However, supporting just two slashes causes us to have to take care
-      // of two cases when parsing the url. If we ensure there is a third slash, we can always ensure the first
-      // path parameter is in pathname rather than in hostname.
-      if (url.startsWith('bluesky://') && !url.startsWith('bluesky:///')) {
-        url = url.replace('bluesky://', 'bluesky:///')
+    const handleIncomingURL = async (url: string) => {
+      if (IS_IOS) {
+        // Close in-app browser if it's open (iOS only)
+        await WebBrowser.dismissBrowser().catch(() => {})
       }
 
-      const urlp = new URL(url)
-      const [_, intent, intentType] = urlp.pathname.split('/')
+      const referrerInfo = Referrer.getReferrerInfo()
+      if (referrerInfo && referrerInfo.hostname !== 'bsky.app') {
+        ax.metric('deepLink:referrerReceived', {
+          to: url,
+          referrer: referrerInfo?.referrer,
+          hostname: referrerInfo?.hostname,
+        })
+      }
+      const urlp = parseLinkingUrl(url)
+      const [, intent, intentType] = urlp.pathname.split('/')
 
       // On native, our links look like bluesky://intent/SomeIntent, so we have to check the hostname for the
       // intent check. On web, we have to check the first part of the path since we have an actual hostname
@@ -38,31 +58,80 @@ export function useIntentHandler() {
           composeIntent({
             text: params.get('text'),
             imageUrisStr: params.get('imageUris'),
+            videoUri: params.get('videoUri'),
           })
+          return
+        }
+        case 'verify-email': {
+          const code = params.get('code')
+          if (!code) return
+          verifyEmailIntent(code)
+          return
+        }
+        case 'age-assurance': {
+          // Handled in `#/ageAssurance/components/RedirectOverlay.tsx`
+          return
+        }
+        case 'apply-ota': {
+          const channel = params.get('channel')
+          if (!channel) {
+            Alert.alert('Error', 'No channel provided to look for.')
+          } else {
+            tryApplyUpdate(channel)
+          }
+          return
+        }
+        default: {
+          return
         }
       }
     }
 
-    if (incomingUrl) handleIncomingURL(incomingUrl)
-  }, [incomingUrl, composeIntent])
+    if (incomingUrl) {
+      if (previousIntentUrl === incomingUrl) {
+        return
+      }
+      handleIncomingURL(incomingUrl)
+      previousIntentUrl = incomingUrl
+    }
+  }, [
+    incomingUrl,
+    ax,
+    composeIntent,
+    verifyEmailIntent,
+    currentAccount,
+    tryApplyUpdate,
+  ])
 }
 
-function useComposeIntent() {
+export function useComposeIntent() {
   const closeAllActiveElements = useCloseAllActiveElements()
-  const {openComposer} = useComposerControls()
+  const {openComposer} = useOpenComposer()
   const {hasSession} = useSession()
 
   return React.useCallback(
     ({
       text,
       imageUrisStr,
+      videoUri,
     }: {
       text: string | null
-      imageUrisStr: string | null // unused for right now, will be used later with intents
+      imageUrisStr: string | null
+      videoUri: string | null
     }) => {
       if (!hasSession) return
-
       closeAllActiveElements()
+
+      // Whenever a video URI is present, we don't support adding images right now.
+      if (videoUri) {
+        const [uri, width, height] = videoUri.split('|')
+        openComposer({
+          text: text ?? undefined,
+          videoUri: {uri, width: Number(width), height: Number(height)},
+          logContext: 'Deeplink',
+        })
+        return
+      }
 
       const imageUris = imageUrisStr
         ?.split(',')
@@ -84,10 +153,29 @@ function useComposeIntent() {
       setTimeout(() => {
         openComposer({
           text: text ?? undefined,
-          imageUris: isNative ? imageUris : undefined,
+          imageUris: IS_NATIVE ? imageUris : undefined,
+          logContext: 'Deeplink',
         })
       }, 500)
     },
     [hasSession, closeAllActiveElements, openComposer],
+  )
+}
+
+function useVerifyEmailIntent() {
+  const closeAllActiveElements = useCloseAllActiveElements()
+  const {verifyEmailDialogControl: control, setVerifyEmailState: setState} =
+    useIntentDialogs()
+  return React.useCallback(
+    (code: string) => {
+      closeAllActiveElements()
+      setState({
+        code,
+      })
+      setTimeout(() => {
+        control.open()
+      }, 1000)
+    },
+    [closeAllActiveElements, control, setState],
   )
 }

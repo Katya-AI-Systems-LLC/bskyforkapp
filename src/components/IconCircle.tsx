@@ -1,15 +1,13 @@
-import React from 'react'
 import {View} from 'react-native'
 
 import {
-  useTheme,
   atoms as a,
-  ViewStyleProp,
-  TextStyleProp,
-  flatten,
+  type TextStyleProp,
+  useTheme,
+  type ViewStyleProp,
 } from '#/alf'
-import {Growth_Stroke2_Corner0_Rounded as Growth} from '#/components/icons/Growth'
-import {Props} from '#/components/icons/common'
+import {type Props} from '#/components/icons/common'
+import {type Growth_Stroke2_Corner0_Rounded as Growth} from '#/components/icons/Growth'
 
 export function IconCircle({
   icon: Icon,
@@ -32,20 +30,11 @@ export function IconCircle({
         {
           width: size === 'lg' ? 52 : 64,
           height: size === 'lg' ? 52 : 64,
-          backgroundColor:
-            t.name === 'light' ? t.palette.primary_50 : t.palette.primary_950,
+          backgroundColor: t.palette.primary_50,
         },
-        flatten(style),
+        style,
       ]}>
-      <Icon
-        size={size}
-        style={[
-          {
-            color: t.palette.primary_500,
-          },
-          flatten(iconStyle),
-        ]}
-      />
+      <Icon size={size} style={[{color: t.palette.primary_500}, iconStyle]} />
     </View>
   )
 }

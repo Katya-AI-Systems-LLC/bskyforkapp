@@ -1,20 +1,21 @@
 import React from 'react'
 import {
-  GestureResponderEvent,
-  StyleProp,
-  StyleSheet,
-  TextStyle,
-  Pressable,
-  ViewStyle,
-  PressableStateCallbackType,
   ActivityIndicator,
+  type GestureResponderEvent,
+  type NativeSyntheticEvent,
+  type NativeTouchEvent,
+  Pressable,
+  type PressableStateCallbackType,
+  type StyleProp,
+  StyleSheet,
+  type TextStyle,
   View,
-  NativeSyntheticEvent,
-  NativeTouchEvent,
+  type ViewStyle,
 } from 'react-native'
+
+import {choose} from '#/lib/functions'
+import {useTheme} from '#/lib/ThemeContext'
 import {Text} from '../text/Text'
-import {useTheme} from 'lib/ThemeContext'
-import {choose} from 'lib/functions'
 
 export type ButtonType =
   | 'primary'
@@ -30,12 +31,15 @@ export type ButtonType =
 // Augment type for react-native-web (see https://github.com/necolas/react-native-web/issues/1684#issuecomment-766451866)
 declare module 'react-native' {
   interface PressableStateCallbackType {
+    // @ts-ignore web only
     hovered?: boolean
     focused?: boolean
   }
 }
 
-// TODO: Enforce that button always has a label
+/**
+ * @deprecated use Button from `#/components/Button.tsx` instead
+ */
 export function Button({
   type = 'primary',
   label,
@@ -112,7 +116,7 @@ export function Button({
       },
       secondary: {
         color: theme.palette.secondary.text,
-        fontWeight: theme.palette.secondary.isLowContrast ? '500' : undefined,
+        fontWeight: theme.palette.secondary.isLowContrast ? '600' : undefined,
       },
       default: {
         color: theme.palette.default.text,
@@ -123,23 +127,23 @@ export function Button({
       },
       'primary-outline': {
         color: theme.palette.primary.textInverted,
-        fontWeight: theme.palette.primary.isLowContrast ? '500' : undefined,
+        fontWeight: theme.palette.primary.isLowContrast ? '600' : undefined,
       },
       'secondary-outline': {
         color: theme.palette.secondary.textInverted,
-        fontWeight: theme.palette.secondary.isLowContrast ? '500' : undefined,
+        fontWeight: theme.palette.secondary.isLowContrast ? '600' : undefined,
       },
       'primary-light': {
         color: theme.palette.primary.textInverted,
-        fontWeight: theme.palette.primary.isLowContrast ? '500' : undefined,
+        fontWeight: theme.palette.primary.isLowContrast ? '600' : undefined,
       },
       'secondary-light': {
         color: theme.palette.secondary.textInverted,
-        fontWeight: theme.palette.secondary.isLowContrast ? '500' : undefined,
+        fontWeight: theme.palette.secondary.isLowContrast ? '600' : undefined,
       },
       'default-light': {
         color: theme.palette.default.text,
-        fontWeight: theme.palette.default.isLowContrast ? '500' : undefined,
+        fontWeight: theme.palette.default.isLowContrast ? '600' : undefined,
       },
     },
   )
@@ -149,9 +153,9 @@ export function Button({
     async (event: GestureResponderEvent) => {
       event.stopPropagation()
       event.preventDefault()
-      withLoading && setIsLoading(true)
+      if (withLoading) setIsLoading(true)
       await onPress?.(event)
-      withLoading && setIsLoading(false)
+      if (withLoading) setIsLoading(false)
     },
     [onPress, withLoading],
   )

@@ -1,139 +1,182 @@
-import React, {memo, useCallback} from 'react'
-import {StyleProp, StyleSheet, TextStyle, View, ViewStyle} from 'react-native'
-import {AppBskyActorDefs, ModerationDecision, ModerationUI} from '@atproto/api'
+import {memo, useCallback} from 'react'
+import {type StyleProp, View, type ViewStyle} from 'react-native'
+import {type AppBskyActorDefs, type ModerationDecision} from '@atproto/api'
+import {msg} from '@lingui/macro'
+import {useLingui} from '@lingui/react'
 import {useQueryClient} from '@tanstack/react-query'
 
+import {useActorStatus} from '#/lib/actor-status'
+import {makeProfileLink} from '#/lib/routes/links'
+import {forceLTR} from '#/lib/strings/bidi'
+import {NON_BREAKING_SPACE} from '#/lib/strings/constants'
+import {sanitizeDisplayName} from '#/lib/strings/display-names'
+import {sanitizeHandle} from '#/lib/strings/handles'
+import {niceDate} from '#/lib/strings/time'
+import {useProfileShadow} from '#/state/cache/profile-shadow'
 import {precacheProfile} from '#/state/queries/profile'
-import {usePalette} from 'lib/hooks/usePalette'
-import {makeProfileLink} from 'lib/routes/links'
-import {sanitizeDisplayName} from 'lib/strings/display-names'
-import {sanitizeHandle} from 'lib/strings/handles'
-import {niceDate} from 'lib/strings/time'
-import {TypographyVariant} from 'lib/ThemeContext'
-import {isAndroid} from 'platform/detection'
+import {atoms as a, platform, useTheme, web} from '#/alf'
+import {WebOnlyInlineLinkText} from '#/components/Link'
 import {ProfileHoverCard} from '#/components/ProfileHoverCard'
-import {TextLinkOnWebOnly} from './Link'
-import {Text} from './text/Text'
+import {Text} from '#/components/Typography'
+import {useSimpleVerificationState} from '#/components/verification'
+import {VerificationCheck} from '#/components/verification/VerificationCheck'
+import {IS_ANDROID} from '#/env'
 import {TimeElapsed} from './TimeElapsed'
 import {PreviewableUserAvatar} from './UserAvatar'
 
 interface PostMetaOpts {
   author: AppBskyActorDefs.ProfileViewBasic
   moderation: ModerationDecision | undefined
-  authorHasWarning: boolean
   postHref: string
   timestamp: string
   showAvatar?: boolean
-  avatarModeration?: ModerationUI
   avatarSize?: number
-  displayNameType?: TypographyVariant
-  displayNameStyle?: StyleProp<TextStyle>
   onOpenAuthor?: () => void
   style?: StyleProp<ViewStyle>
 }
 
 let PostMeta = (opts: PostMetaOpts): React.ReactNode => {
-  const pal = usePalette('default')
-  const displayName = opts.author.displayName || opts.author.handle
-  const handle = opts.author.handle
-  const profileLink = makeProfileLink(opts.author)
+  const t = useTheme()
+  const {i18n, _} = useLingui()
+
+  const author = useProfileShadow(opts.author)
+  const displayName = author.displayName || author.handle
+  const handle = author.handle
+  const profileLink = makeProfileLink(author)
   const queryClient = useQueryClient()
   const onOpenAuthor = opts.onOpenAuthor
   const onBeforePressAuthor = useCallback(() => {
-    precacheProfile(queryClient, opts.author)
+    precacheProfile(queryClient, author)
     onOpenAuthor?.()
-  }, [queryClient, opts.author, onOpenAuthor])
+  }, [queryClient, author, onOpenAuthor])
   const onBeforePressPost = useCallback(() => {
-    precacheProfile(queryClient, opts.author)
-  }, [queryClient, opts.author])
+    precacheProfile(queryClient, author)
+  }, [queryClient, author])
+
+  const timestampLabel = niceDate(i18n, opts.timestamp)
+  const verification = useSimpleVerificationState({profile: author})
+  const {isActive: live} = useActorStatus(author)
 
   return (
-    <View style={[styles.container, opts.style]}>
+    <View
+      style={[
+        a.flex_1,
+        a.flex_row,
+        a.align_center,
+        a.pb_xs,
+        a.gap_xs,
+        a.z_20,
+        opts.style,
+      ]}>
       {opts.showAvatar && (
-        <View style={styles.avatar}>
+        <View style={[a.self_center, a.mr_2xs]}>
           <PreviewableUserAvatar
             size={opts.avatarSize || 16}
-            profile={opts.author}
-            moderation={opts.avatarModeration}
-            type={opts.author.associated?.labeler ? 'labeler' : 'user'}
+            profile={author}
+            moderation={opts.moderation?.ui('avatar')}
+            type={author.associated?.labeler ? 'labeler' : 'user'}
+            live={live}
+            hideLiveBadge
           />
         </View>
       )}
-      <ProfileHoverCard inline did={opts.author.did}>
-        <Text
-          numberOfLines={1}
-          style={[styles.maxWidth, pal.textLight, opts.displayNameStyle]}>
-          <TextLinkOnWebOnly
-            type={opts.displayNameType || 'lg-bold'}
-            style={[pal.text]}
-            lineHeight={1.2}
-            disableMismatchWarning
-            text={
-              <>
-                {sanitizeDisplayName(
+      <View style={[a.flex_row, a.align_end, a.flex_shrink]}>
+        <ProfileHoverCard did={author.did}>
+          <View style={[a.flex_row, a.align_end, a.flex_shrink]}>
+            <WebOnlyInlineLinkText
+              emoji
+              numberOfLines={1}
+              to={profileLink}
+              label={_(msg`View profile`)}
+              disableMismatchWarning
+              onPress={onBeforePressAuthor}
+              style={[
+                a.text_md,
+                a.font_semi_bold,
+                t.atoms.text,
+                a.leading_tight,
+                a.flex_shrink_0,
+                {maxWidth: '70%'},
+              ]}>
+              {forceLTR(
+                sanitizeDisplayName(
                   displayName,
                   opts.moderation?.ui('displayName'),
-                )}
-              </>
-            }
-            href={profileLink}
-            onBeforePress={onBeforePressAuthor}
-          />
-          <TextLinkOnWebOnly
-            type="md"
-            disableMismatchWarning
-            style={[pal.textLight, {flexShrink: 4}]}
-            text={'\xa0' + sanitizeHandle(handle, '@')}
-            href={profileLink}
-            onBeforePress={onBeforePressAuthor}
-            anchorNoUnderline
-          />
-        </Text>
-      </ProfileHoverCard>
-      {!isAndroid && (
-        <Text
-          type="md"
-          style={pal.textLight}
-          lineHeight={1.2}
-          accessible={false}>
-          &middot;
-        </Text>
-      )}
-      <TimeElapsed timestamp={opts.timestamp}>
-        {({timeElapsed}) => (
-          <TextLinkOnWebOnly
-            type="md"
-            style={pal.textLight}
-            lineHeight={1.2}
-            text={timeElapsed}
-            accessibilityLabel={niceDate(opts.timestamp)}
-            title={niceDate(opts.timestamp)}
-            accessibilityHint=""
-            href={opts.postHref}
-            onBeforePress={onBeforePressPost}
-          />
-        )}
-      </TimeElapsed>
+                ),
+              )}
+            </WebOnlyInlineLinkText>
+            {verification.showBadge && (
+              <View
+                style={[
+                  a.pl_2xs,
+                  a.self_center,
+                  {
+                    marginTop: platform({web: 0, ios: 0, android: -1}),
+                  },
+                ]}>
+                <VerificationCheck
+                  width={platform({android: 13, default: 12})}
+                  verifier={verification.role === 'verifier'}
+                />
+              </View>
+            )}
+            <WebOnlyInlineLinkText
+              emoji
+              numberOfLines={1}
+              to={profileLink}
+              label={_(msg`View profile`)}
+              disableMismatchWarning
+              disableUnderline
+              onPress={onBeforePressAuthor}
+              style={[
+                a.text_md,
+                t.atoms.text_contrast_medium,
+                a.leading_tight,
+                {flexShrink: 10},
+              ]}>
+              {NON_BREAKING_SPACE + sanitizeHandle(handle, '@')}
+            </WebOnlyInlineLinkText>
+          </View>
+        </ProfileHoverCard>
+
+        <TimeElapsed timestamp={opts.timestamp}>
+          {({timeElapsed}) => (
+            <WebOnlyInlineLinkText
+              to={opts.postHref}
+              label={timestampLabel}
+              title={timestampLabel}
+              disableMismatchWarning
+              disableUnderline
+              onPress={onBeforePressPost}
+              style={[
+                a.pl_xs,
+                a.text_md,
+                a.leading_tight,
+                IS_ANDROID && a.flex_grow,
+                a.text_right,
+                t.atoms.text_contrast_medium,
+                web({
+                  whiteSpace: 'nowrap',
+                }),
+              ]}>
+              {!IS_ANDROID && (
+                <Text
+                  style={[
+                    a.text_md,
+                    a.leading_tight,
+                    t.atoms.text_contrast_medium,
+                  ]}
+                  accessible={false}>
+                  &middot;{' '}
+                </Text>
+              )}
+              {timeElapsed}
+            </WebOnlyInlineLinkText>
+          )}
+        </TimeElapsed>
+      </View>
     </View>
   )
 }
 PostMeta = memo(PostMeta)
 export {PostMeta}
-
-const styles = StyleSheet.create({
-  container: {
-    flexDirection: 'row',
-    alignItems: 'flex-end',
-    paddingBottom: 2,
-    gap: 4,
-    zIndex: 1,
-    flex: 1,
-  },
-  avatar: {
-    alignSelf: 'center',
-  },
-  maxWidth: {
-    flex: isAndroid ? 1 : undefined,
-    flexShrink: isAndroid ? undefined : 1,
-  },
-})

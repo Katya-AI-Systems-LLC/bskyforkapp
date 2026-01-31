@@ -1,21 +1,43 @@
-import React from 'react'
-import {TextStyle} from 'react-native'
+import {useMemo} from 'react'
+import {type StyleProp, type TextStyle} from 'react-native'
 import {AppBskyRichtextFacet, RichText as RichTextAPI} from '@atproto/api'
-import {msg} from '@lingui/macro'
-import {useLingui} from '@lingui/react'
-import {useNavigation} from '@react-navigation/native'
 
-import {NavigationProp} from '#/lib/routes/types'
 import {toShortUrl} from '#/lib/strings/url-helpers'
-import {isNative} from '#/platform/detection'
-import {atoms as a, flatten, native, TextStyleProp, useTheme, web} from '#/alf'
-import {useInteractionState} from '#/components/hooks/useInteractionState'
-import {InlineLinkText, LinkProps} from '#/components/Link'
+import {atoms as a, flatten, type TextStyleProp} from '#/alf'
+import {isOnlyEmoji} from '#/alf/typography'
+import {InlineLinkText, type LinkProps} from '#/components/Link'
 import {ProfileHoverCard} from '#/components/ProfileHoverCard'
-import {TagMenu, useTagMenuControl} from '#/components/TagMenu'
-import {Text, TextProps} from '#/components/Typography'
+import {RichTextTag} from '#/components/RichTextTag'
+import {Text, type TextProps} from '#/components/Typography'
 
 const WORD_WRAP = {wordWrap: 1}
+// lifted from facet detection in `RichText` impl, _without_ `gm` flags
+const URL_REGEX =
+  /(^|\s|\()((https?:\/\/[\S]+)|((?<domain>[a-z][a-z0-9]*(\.[a-z0-9]+)+)[\S]*))/i
+
+export type RichTextProps = TextStyleProp &
+  Pick<TextProps, 'selectable' | 'onLayout' | 'onTextLayout'> & {
+    value: RichTextAPI | string
+    testID?: string
+    numberOfLines?: number
+    disableLinks?: boolean
+    enableTags?: boolean
+    authorHandle?: string
+    onLinkPress?: LinkProps['onPress']
+    interactiveStyle?: StyleProp<TextStyle>
+    emojiMultiplier?: number
+    shouldProxyLinks?: boolean
+    /**
+     * DANGEROUS: Disable facet lexicon validation
+     *
+     * `detectFacetsWithoutResolution()` generates technically invalid facets,
+     * with a handle in place of the DID. This means that RichText that uses it
+     * won't be able to render links.
+     *
+     * Use with care - only use if you're rendering facets you're generating yourself.
+     */
+    disableMentionFacetValidation?: true
+  }
 
 export function RichText({
   testID,
@@ -29,44 +51,39 @@ export function RichText({
   onLinkPress,
   interactiveStyle,
   emojiMultiplier = 1.85,
-}: TextStyleProp &
-  Pick<TextProps, 'selectable'> & {
-    value: RichTextAPI | string
-    testID?: string
-    numberOfLines?: number
-    disableLinks?: boolean
-    enableTags?: boolean
-    authorHandle?: string
-    onLinkPress?: LinkProps['onPress']
-    interactiveStyle?: TextStyle
-    emojiMultiplier?: number
-  }) {
-  const richText = React.useMemo(
-    () =>
-      value instanceof RichTextAPI ? value : new RichTextAPI({text: value}),
-    [value],
-  )
+  onLayout,
+  onTextLayout,
+  shouldProxyLinks,
+  disableMentionFacetValidation,
+}: RichTextProps) {
+  const richText = useMemo(() => {
+    if (value instanceof RichTextAPI) {
+      return value
+    } else {
+      const rt = new RichTextAPI({text: value})
+      rt.detectFacetsWithoutResolution()
+      return rt
+    }
+  }, [value])
 
-  const flattenedStyle = flatten(style)
-  const plainStyles = [a.leading_snug, flattenedStyle]
-  const interactiveStyles = [
-    a.leading_snug,
-    a.pointer_events_auto,
-    flatten(interactiveStyle),
-    flattenedStyle,
-  ]
+  const plainStyles = [a.leading_snug, style]
+  const interactiveStyles = [plainStyles, interactiveStyle]
 
   const {text, facets} = richText
 
   if (!facets?.length) {
     if (isOnlyEmoji(text)) {
+      const flattenedStyle = flatten(style) ?? {}
       const fontSize =
         (flattenedStyle.fontSize ?? a.text_sm.fontSize) * emojiMultiplier
       return (
         <Text
+          emoji
           selectable={selectable}
           testID={testID}
           style={[plainStyles, {fontSize}]}
+          onLayout={onLayout}
+          onTextLayout={onTextLayout}
           // @ts-ignore web only -prf
           dataSet={WORD_WRAP}>
           {text}
@@ -75,10 +92,13 @@ export function RichText({
     }
     return (
       <Text
+        emoji
         selectable={selectable}
         testID={testID}
         style={plainStyles}
         numberOfLines={numberOfLines}
+        onLayout={onLayout}
+        onTextLayout={onTextLayout}
         // @ts-ignore web only -prf
         dataSet={WORD_WRAP}>
         {text}
@@ -93,26 +113,30 @@ export function RichText({
     const link = segment.link
     const mention = segment.mention
     const tag = segment.tag
+
     if (
       mention &&
-      AppBskyRichtextFacet.validateMention(mention).success &&
+      (disableMentionFacetValidation ||
+        AppBskyRichtextFacet.validateMention(mention).success) &&
       !disableLinks
     ) {
       els.push(
-        <ProfileHoverCard key={key} inline did={mention.did}>
+        <ProfileHoverCard key={key} did={mention.did}>
           <InlineLinkText
             selectable={selectable}
             to={`/profile/${mention.did}`}
             style={interactiveStyles}
             // @ts-ignore TODO
             dataSet={WORD_WRAP}
+            shouldProxy={shouldProxyLinks}
             onPress={onLinkPress}>
             {segment.text}
           </InlineLinkText>
         </ProfileHoverCard>,
       )
     } else if (link && AppBskyRichtextFacet.validateLink(link).success) {
-      if (disableLinks) {
+      const isValidLink = URL_REGEX.test(link.uri)
+      if (!isValidLink || disableLinks) {
         els.push(toShortUrl(segment.text))
       } else {
         els.push(
@@ -124,7 +148,9 @@ export function RichText({
             // @ts-ignore TODO
             dataSet={WORD_WRAP}
             shareOnLongPress
-            onPress={onLinkPress}>
+            shouldProxy={shouldProxyLinks}
+            onPress={onLinkPress}
+            emoji>
             {toShortUrl(segment.text)}
           </InlineLinkText>,
         )
@@ -138,10 +164,9 @@ export function RichText({
       els.push(
         <RichTextTag
           key={key}
-          text={segment.text}
+          display={segment.text}
           tag={tag.tag}
-          style={interactiveStyles}
-          selectable={selectable}
+          textStyle={interactiveStyles}
           authorHandle={authorHandle}
         />,
       )
@@ -153,103 +178,16 @@ export function RichText({
 
   return (
     <Text
+      emoji
       selectable={selectable}
       testID={testID}
       style={plainStyles}
       numberOfLines={numberOfLines}
+      onLayout={onLayout}
+      onTextLayout={onTextLayout}
       // @ts-ignore web only -prf
       dataSet={WORD_WRAP}>
       {els}
     </Text>
-  )
-}
-
-function RichTextTag({
-  text,
-  tag,
-  style,
-  selectable,
-  authorHandle,
-}: {
-  text: string
-  tag: string
-  selectable?: boolean
-  authorHandle?: string
-} & TextStyleProp) {
-  const t = useTheme()
-  const {_} = useLingui()
-  const control = useTagMenuControl()
-  const {
-    state: hovered,
-    onIn: onHoverIn,
-    onOut: onHoverOut,
-  } = useInteractionState()
-  const {state: focused, onIn: onFocus, onOut: onBlur} = useInteractionState()
-  const {
-    state: pressed,
-    onIn: onPressIn,
-    onOut: onPressOut,
-  } = useInteractionState()
-  const navigation = useNavigation<NavigationProp>()
-
-  const navigateToPage = React.useCallback(() => {
-    navigation.push('Hashtag', {
-      tag: encodeURIComponent(tag),
-    })
-  }, [navigation, tag])
-
-  const openDialog = React.useCallback(() => {
-    control.open()
-  }, [control])
-
-  /*
-   * N.B. On web, this is wrapped in another pressable comopnent with a11y
-   * labels, etc. That's why only some of these props are applied here.
-   */
-
-  return (
-    <React.Fragment>
-      <TagMenu control={control} tag={tag} authorHandle={authorHandle}>
-        <Text
-          selectable={selectable}
-          {...native({
-            accessibilityLabel: _(msg`Hashtag: #${tag}`),
-            accessibilityHint: _(msg`Long press to open tag menu for #${tag}`),
-            accessibilityRole: isNative ? 'button' : undefined,
-            onPress: navigateToPage,
-            onLongPress: openDialog,
-            onPressIn: onPressIn,
-            onPressOut: onPressOut,
-          })}
-          {...web({
-            onMouseEnter: onHoverIn,
-            onMouseLeave: onHoverOut,
-          })}
-          // @ts-ignore
-          onFocus={onFocus}
-          onBlur={onBlur}
-          style={[
-            web({
-              cursor: 'pointer',
-            }),
-            {color: t.palette.primary_500},
-            (hovered || focused || pressed) && {
-              ...web({outline: 0}),
-              textDecorationLine: 'underline',
-              textDecorationColor: t.palette.primary_500,
-            },
-            style,
-          ]}>
-          {text}
-        </Text>
-      </TagMenu>
-    </React.Fragment>
-  )
-}
-
-export function isOnlyEmoji(text: string) {
-  return (
-    text.length <= 15 &&
-    /^[\p{Emoji_Presentation}\p{Extended_Pictographic}]+$/u.test(text)
   )
 }

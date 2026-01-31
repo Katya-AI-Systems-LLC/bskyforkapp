@@ -1,12 +1,14 @@
-import React from 'react'
-import type {
-  AccessibilityProps,
-  GestureResponderEvent,
-  ScrollViewProps,
+import {
+  type AccessibilityProps,
+  type GestureResponderEvent,
+  type ScrollViewProps,
+  type StyleProp,
+  type ViewStyle,
 } from 'react-native'
-import {BottomSheetProps} from '@discord/bottom-sheet/src'
 
-import {ViewStyleProp} from '#/alf'
+import {type ViewStyleProp} from '#/alf'
+import {type BottomSheetViewProps} from '../../../modules/bottom-sheet'
+import {type BottomSheetSnapPoint} from '../../../modules/bottom-sheet/src/BottomSheet.types'
 
 type A11yProps = Required<AccessibilityProps>
 
@@ -31,12 +33,18 @@ export type DialogControlRefProps = {
  */
 export type DialogControlProps = DialogControlRefProps & {
   id: string
-  ref: React.RefObject<DialogControlRefProps>
+  ref: React.RefObject<DialogControlRefProps | null>
   isOpen?: boolean
 }
 
 export type DialogContextProps = {
   close: DialogControlProps['close']
+  IS_NATIVEDialog: boolean
+  nativeSnapPoint: BottomSheetSnapPoint
+  disableDrag: boolean
+  setDisableDrag: React.Dispatch<React.SetStateAction<boolean>>
+  // in the event that the hook is used outside of a dialog
+  isWithinDialog: boolean
 }
 
 export type DialogControlOpenOptions = {
@@ -52,24 +60,32 @@ export type DialogControlOpenOptions = {
 export type DialogOuterProps = {
   control: DialogControlProps
   onClose?: () => void
-  nativeOptions?: {
-    sheet?: Omit<BottomSheetProps, 'children'>
+  nativeOptions?: Omit<BottomSheetViewProps, 'children'>
+  webOptions?: {
+    alignCenter?: boolean
+    onBackgroundPress?: (e: GestureResponderEvent) => void
   }
-  webOptions?: {}
   testID?: string
 }
 
-type DialogInnerPropsBase<T> = React.PropsWithChildren<ViewStyleProp> & T
+type DialogInnerPropsBase<T> = React.PropsWithChildren<ViewStyleProp> &
+  T & {
+    testID?: string
+  }
 export type DialogInnerProps =
   | DialogInnerPropsBase<{
       label?: undefined
       accessibilityLabelledBy: A11yProps['aria-labelledby']
       accessibilityDescribedBy: string
       keyboardDismissMode?: ScrollViewProps['keyboardDismissMode']
+      contentContainerStyle?: StyleProp<ViewStyle>
+      header?: React.ReactNode
     }>
   | DialogInnerPropsBase<{
       label: string
       accessibilityLabelledBy?: undefined
       accessibilityDescribedBy?: undefined
       keyboardDismissMode?: ScrollViewProps['keyboardDismissMode']
+      contentContainerStyle?: StyleProp<ViewStyle>
+      header?: React.ReactNode
     }>

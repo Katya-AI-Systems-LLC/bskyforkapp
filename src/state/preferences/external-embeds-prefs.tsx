@@ -1,7 +1,7 @@
 import React from 'react'
 
+import {type EmbedPlayerSource} from '#/lib/strings/embed-player'
 import * as persisted from '#/state/persisted'
-import {EmbedPlayerSource} from 'lib/strings/embed-player'
 
 type StateContext = persisted.Schema['externalEmbeds']
 type SetContext = (
@@ -12,7 +12,9 @@ type SetContext = (
 const stateContext = React.createContext<StateContext>(
   persisted.defaults.externalEmbeds,
 )
+stateContext.displayName = 'ExternalEmbedsPrefsStateContext'
 const setContext = React.createContext<SetContext>({} as SetContext)
+setContext.displayName = 'ExternalEmbedsPrefsSetContext'
 
 export function Provider({children}: React.PropsWithChildren<{}>) {
   const [state, setState] = React.useState(persisted.get('externalEmbeds'))
@@ -35,8 +37,8 @@ export function Provider({children}: React.PropsWithChildren<{}>) {
   )
 
   React.useEffect(() => {
-    return persisted.onUpdate(() => {
-      setState(persisted.get('externalEmbeds'))
+    return persisted.onUpdate('externalEmbeds', nextExternalEmbeds => {
+      setState(nextExternalEmbeds)
     })
   }, [setStateWrapped])
 

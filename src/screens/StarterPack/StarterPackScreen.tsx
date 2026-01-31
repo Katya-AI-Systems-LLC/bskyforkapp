@@ -3,61 +3,68 @@ import {View} from 'react-native'
 import {Image} from 'expo-image'
 import {
   AppBskyGraphDefs,
-  AppBskyGraphGetList,
   AppBskyGraphStarterpack,
   AtUri,
-  ModerationOpts,
+  type ModerationOpts,
   RichText as RichTextAPI,
 } from '@atproto/api'
 import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome'
-import {msg, Trans} from '@lingui/macro'
+import {msg, Plural, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 import {useNavigation} from '@react-navigation/native'
-import {NativeStackScreenProps} from '@react-navigation/native-stack'
-import {
-  InfiniteData,
-  UseInfiniteQueryResult,
-  useQueryClient,
-} from '@tanstack/react-query'
+import {type NativeStackScreenProps} from '@react-navigation/native-stack'
+import {useQueryClient} from '@tanstack/react-query'
 
+import {batchedUpdates} from '#/lib/batchedUpdates'
+import {HITSLOP_20} from '#/lib/constants'
+import {isBlockedOrBlocking, isMuted} from '#/lib/moderation/blocked-and-muted'
+import {makeProfileLink, makeStarterPackLink} from '#/lib/routes/links'
+import {
+  type CommonNavigatorParams,
+  type NavigationProp,
+} from '#/lib/routes/types'
 import {cleanError} from '#/lib/strings/errors'
+import {getStarterPackOgCard} from '#/lib/strings/starter-pack'
 import {logger} from '#/logger'
-import {useDeleteStarterPackMutation} from '#/state/queries/starter-packs'
-import {batchedUpdates} from 'lib/batchedUpdates'
-import {HITSLOP_20} from 'lib/constants'
-import {makeProfileLink, makeStarterPackLink} from 'lib/routes/links'
-import {CommonNavigatorParams, NavigationProp} from 'lib/routes/types'
-import {logEvent} from 'lib/statsig/statsig'
-import {getStarterPackOgCard} from 'lib/strings/starter-pack'
-import {isWeb} from 'platform/detection'
-import {updateProfileShadow} from 'state/cache/profile-shadow'
-import {useModerationOpts} from 'state/preferences/moderation-opts'
-import {useListMembersQuery} from 'state/queries/list-members'
-import {useResolvedStarterPackShortLink} from 'state/queries/resolve-short-link'
-import {useResolveDidQuery} from 'state/queries/resolve-uri'
-import {useShortenLink} from 'state/queries/shorten-link'
-import {useStarterPackQuery} from 'state/queries/starter-packs'
-import {useAgent, useSession} from 'state/session'
-import {useLoggedOutViewControls} from 'state/shell/logged-out'
-import {useSetActiveStarterPack} from 'state/shell/starter-pack'
+import {updateProfileShadow} from '#/state/cache/profile-shadow'
+import {useModerationOpts} from '#/state/preferences/moderation-opts'
+import {getAllListMembers} from '#/state/queries/list-members'
+import {useResolvedStarterPackShortLink} from '#/state/queries/resolve-short-link'
+import {useResolveDidQuery} from '#/state/queries/resolve-uri'
+import {useShortenLink} from '#/state/queries/shorten-link'
+import {
+  useDeleteStarterPackMutation,
+  useStarterPackQuery,
+} from '#/state/queries/starter-packs'
+import {useAgent, useSession} from '#/state/session'
+import {useLoggedOutViewControls} from '#/state/shell/logged-out'
+import {
+  ProgressGuideAction,
+  useProgressGuideControls,
+} from '#/state/shell/progress-guide'
+import {useSetActiveStarterPack} from '#/state/shell/starter-pack'
+import {PagerWithHeader} from '#/view/com/pager/PagerWithHeader'
+import {ProfileSubpageHeader} from '#/view/com/profile/ProfileSubpageHeader'
 import * as Toast from '#/view/com/util/Toast'
-import {PagerWithHeader} from 'view/com/pager/PagerWithHeader'
-import {ProfileSubpageHeader} from 'view/com/profile/ProfileSubpageHeader'
-import {CenteredView} from 'view/com/util/Views'
 import {bulkWriteFollows} from '#/screens/Onboarding/util'
 import {atoms as a, useBreakpoints, useTheme} from '#/alf'
 import {Button, ButtonIcon, ButtonText} from '#/components/Button'
 import {useDialogControl} from '#/components/Dialog'
-import {ArrowOutOfBox_Stroke2_Corner0_Rounded as ArrowOutOfBox} from '#/components/icons/ArrowOutOfBox'
+import {ArrowOutOfBoxModified_Stroke2_Corner2_Rounded as ArrowOutOfBoxIcon} from '#/components/icons/ArrowOutOfBox'
+import {ChainLink_Stroke2_Corner0_Rounded as ChainLinkIcon} from '#/components/icons/ChainLink'
 import {CircleInfo_Stroke2_Corner0_Rounded as CircleInfo} from '#/components/icons/CircleInfo'
 import {DotGrid_Stroke2_Corner0_Rounded as Ellipsis} from '#/components/icons/DotGrid'
 import {Pencil_Stroke2_Corner0_Rounded as Pencil} from '#/components/icons/Pencil'
 import {Trash_Stroke2_Corner0_Rounded as Trash} from '#/components/icons/Trash'
+import * as Layout from '#/components/Layout'
 import {ListMaybePlaceholder} from '#/components/Lists'
 import {Loader} from '#/components/Loader'
 import * as Menu from '#/components/Menu'
+import {
+  ReportDialog,
+  useReportDialogControl,
+} from '#/components/moderation/ReportDialog'
 import * as Prompt from '#/components/Prompt'
-import {ReportDialog, useReportDialogControl} from '#/components/ReportDialog'
 import {RichText} from '#/components/RichText'
 import {FeedsList} from '#/components/StarterPack/Main/FeedsList'
 import {PostsList} from '#/components/StarterPack/Main/PostsList'
@@ -65,6 +72,9 @@ import {ProfilesList} from '#/components/StarterPack/Main/ProfilesList'
 import {QrCodeDialog} from '#/components/StarterPack/QrCodeDialog'
 import {ShareDialog} from '#/components/StarterPack/ShareDialog'
 import {Text} from '#/components/Typography'
+import {useAnalytics} from '#/analytics'
+import {IS_WEB} from '#/env'
+import * as bsky from '#/types/bsky'
 
 type StarterPackScreeProps = NativeStackScreenProps<
   CommonNavigatorParams,
@@ -76,7 +86,11 @@ type StarterPackScreenShortProps = NativeStackScreenProps<
 >
 
 export function StarterPackScreen({route}: StarterPackScreeProps) {
-  return <StarterPackScreenInner routeParams={route.params} />
+  return (
+    <Layout.Screen>
+      <StarterPackScreenInner routeParams={route.params} />
+    </Layout.Screen>
+  )
 }
 
 export function StarterPackScreenShort({route}: StarterPackScreenShortProps) {
@@ -91,15 +105,21 @@ export function StarterPackScreenShort({route}: StarterPackScreenShortProps) {
 
   if (isLoading || isError || !resolvedStarterPack) {
     return (
-      <ListMaybePlaceholder
-        isLoading={isLoading}
-        isError={isError}
-        errorMessage={_(msg`That starter pack could not be found.`)}
-        emptyMessage={_(msg`That starter pack could not be found.`)}
-      />
+      <Layout.Screen>
+        <ListMaybePlaceholder
+          isLoading={isLoading}
+          isError={isError}
+          errorMessage={_(msg`That starter pack could not be found.`)}
+          emptyMessage={_(msg`That starter pack could not be found.`)}
+        />
+      </Layout.Screen>
     )
   }
-  return <StarterPackScreenInner routeParams={resolvedStarterPack} />
+  return (
+    <Layout.Screen>
+      <StarterPackScreenInner routeParams={resolvedStarterPack} />
+    </Layout.Screen>
+  )
 }
 
 export function StarterPackScreenInner({
@@ -122,7 +142,6 @@ export function StarterPackScreenInner({
     isLoading: isLoadingStarterPack,
     isError: isErrorStarterPack,
   } = useStarterPackQuery({did, rkey})
-  const listMembersQuery = useListMembersQuery(starterPack?.list?.uri, 50)
 
   const isValid =
     starterPack &&
@@ -133,12 +152,7 @@ export function StarterPackScreenInner({
   if (!did || !starterPack || !isValid || !moderationOpts) {
     return (
       <ListMaybePlaceholder
-        isLoading={
-          isLoadingDid ||
-          isLoadingStarterPack ||
-          listMembersQuery.isLoading ||
-          !moderationOpts
-        }
+        isLoading={isLoadingDid || isLoadingStarterPack || !moderationOpts}
         isError={isErrorDid || isErrorStarterPack || !isValid}
         errorMessage={_(msg`That starter pack could not be found.`)}
         emptyMessage={_(msg`That starter pack could not be found.`)}
@@ -154,7 +168,6 @@ export function StarterPackScreenInner({
     <StarterPackScreenLoaded
       starterPack={starterPack}
       routeParams={routeParams}
-      listMembersQuery={listMembersQuery}
       moderationOpts={moderationOpts}
     />
   )
@@ -163,24 +176,22 @@ export function StarterPackScreenInner({
 function StarterPackScreenLoaded({
   starterPack,
   routeParams,
-  listMembersQuery,
   moderationOpts,
 }: {
   starterPack: AppBskyGraphDefs.StarterPackView
   routeParams: StarterPackScreeProps['route']['params']
-  listMembersQuery: UseInfiniteQueryResult<
-    InfiniteData<AppBskyGraphGetList.OutputSchema>
-  >
   moderationOpts: ModerationOpts
 }) {
   const showPeopleTab = Boolean(starterPack.list)
   const showFeedsTab = Boolean(starterPack.feeds?.length)
   const showPostsTab = Boolean(starterPack.list)
+  const {_} = useLingui()
+  const ax = useAnalytics()
 
   const tabs = [
-    ...(showPeopleTab ? ['People'] : []),
-    ...(showFeedsTab ? ['Feeds'] : []),
-    ...(showPostsTab ? ['Posts'] : []),
+    ...(showPeopleTab ? [_(msg`People`)] : []),
+    ...(showFeedsTab ? [_(msg`Feeds`)] : []),
+    ...(showPostsTab ? [_(msg`Posts`)] : []),
   ]
 
   const qrCodeDialogControl = useDialogControl()
@@ -191,10 +202,10 @@ function StarterPackScreenLoaded({
   const [imageLoaded, setImageLoaded] = React.useState(false)
 
   React.useEffect(() => {
-    logEvent('starterPack:opened', {
+    ax.metric('starterPack:opened', {
       starterPack: starterPack.uri,
     })
-  }, [starterPack.uri])
+  }, [ax, starterPack.uri])
 
   const onOpenShareDialog = React.useCallback(() => {
     const rkey = new AtUri(starterPack.uri).rkey
@@ -220,56 +231,53 @@ function StarterPackScreenLoaded({
   }, [onOpenShareDialog, routeParams.new, shareDialogControl])
 
   return (
-    <CenteredView style={[a.h_full_vh]}>
-      <View style={isWeb ? {minHeight: '100%'} : {height: '100%'}}>
-        <PagerWithHeader
-          items={tabs}
-          isHeaderReady={true}
-          renderHeader={() => (
-            <Header
-              starterPack={starterPack}
-              routeParams={routeParams}
-              onOpenShareDialog={onOpenShareDialog}
-            />
-          )}>
-          {showPeopleTab
-            ? ({headerHeight, scrollElRef}) => (
-                <ProfilesList
-                  // Validated above
-                  listUri={starterPack!.list!.uri}
-                  headerHeight={headerHeight}
-                  // @ts-expect-error
-                  scrollElRef={scrollElRef}
-                  listMembersQuery={listMembersQuery}
-                  moderationOpts={moderationOpts}
-                />
-              )
-            : null}
-          {showFeedsTab
-            ? ({headerHeight, scrollElRef}) => (
-                <FeedsList
-                  // @ts-expect-error ?
-                  feeds={starterPack?.feeds}
-                  headerHeight={headerHeight}
-                  // @ts-expect-error
-                  scrollElRef={scrollElRef}
-                />
-              )
-            : null}
-          {showPostsTab
-            ? ({headerHeight, scrollElRef}) => (
-                <PostsList
-                  // Validated above
-                  listUri={starterPack!.list!.uri}
-                  headerHeight={headerHeight}
-                  // @ts-expect-error
-                  scrollElRef={scrollElRef}
-                  moderationOpts={moderationOpts}
-                />
-              )
-            : null}
-        </PagerWithHeader>
-      </View>
+    <>
+      <PagerWithHeader
+        items={tabs}
+        isHeaderReady={true}
+        renderHeader={() => (
+          <Header
+            starterPack={starterPack}
+            routeParams={routeParams}
+            onOpenShareDialog={onOpenShareDialog}
+          />
+        )}>
+        {showPeopleTab
+          ? ({headerHeight, scrollElRef}) => (
+              <ProfilesList
+                // Validated above
+                listUri={starterPack.list!.uri}
+                headerHeight={headerHeight}
+                // @ts-expect-error
+                scrollElRef={scrollElRef}
+                moderationOpts={moderationOpts}
+              />
+            )
+          : null}
+        {showFeedsTab
+          ? ({headerHeight, scrollElRef}) => (
+              <FeedsList
+                // @ts-expect-error ?
+                feeds={starterPack?.feeds}
+                headerHeight={headerHeight}
+                // @ts-expect-error
+                scrollElRef={scrollElRef}
+              />
+            )
+          : null}
+        {showPostsTab
+          ? ({headerHeight, scrollElRef}) => (
+              <PostsList
+                // Validated above
+                listUri={starterPack.list!.uri}
+                headerHeight={headerHeight}
+                // @ts-expect-error
+                scrollElRef={scrollElRef}
+                moderationOpts={moderationOpts}
+              />
+            )
+          : null}
+      </PagerWithHeader>
 
       <QrCodeDialog
         control={qrCodeDialogControl}
@@ -283,7 +291,7 @@ function StarterPackScreenLoaded({
         link={link}
         imageLoaded={imageLoaded}
       />
-    </CenteredView>
+    </>
   )
 }
 
@@ -303,12 +311,14 @@ function Header({
   const queryClient = useQueryClient()
   const setActiveStarterPack = useSetActiveStarterPack()
   const {requestSwitchToAccount} = useLoggedOutViewControls()
+  const {captureAction} = useProgressGuideControls()
 
   const [isProcessing, setIsProcessing] = React.useState(false)
 
   const {record, creator} = starterPack
   const isOwn = creator?.did === currentAccount?.did
   const joinedAllTimeCount = starterPack.joinedAllTimeCount ?? 0
+  const ax = useAnalytics()
 
   const navigation = useNavigation<NavigationProp>()
 
@@ -338,38 +348,60 @@ function Header({
 
     setIsProcessing(true)
 
+    let listItems: AppBskyGraphDefs.ListItemView[] = []
     try {
-      const list = await agent.app.bsky.graph.getList({
-        list: starterPack.list.uri,
-      })
-      const dids = list.data.items
-        .filter(li => !li.subject.viewer?.following)
-        .map(li => li.subject.did)
-
-      const followUris = await bulkWriteFollows(agent, dids)
-
-      batchedUpdates(() => {
-        for (let did of dids) {
-          updateProfileShadow(queryClient, did, {
-            followingUri: followUris.get(did),
-          })
-        }
-      })
-
-      logEvent('starterPack:followAll', {
-        logContext: 'StarterPackProfilesList',
-        starterPack: starterPack.uri,
-        count: dids.length,
-      })
-      Toast.show(_(msg`All accounts have been followed!`))
+      listItems = await getAllListMembers(agent, starterPack.list.uri)
     } catch (e) {
-      Toast.show(_(msg`An error occurred while trying to follow all`))
-    } finally {
       setIsProcessing(false)
+      Toast.show(_(msg`An error occurred while trying to follow all`), 'xmark')
+      logger.error('Failed to get list members for starter pack', {
+        safeMessage: e,
+      })
+      return
     }
+
+    const dids = listItems
+      .filter(
+        li =>
+          li.subject.did !== currentAccount?.did &&
+          !isBlockedOrBlocking(li.subject) &&
+          !isMuted(li.subject) &&
+          !li.subject.viewer?.following,
+      )
+      .map(li => li.subject.did)
+
+    let followUris: Map<string, string>
+    try {
+      followUris = await bulkWriteFollows(agent, dids)
+    } catch (e) {
+      setIsProcessing(false)
+      Toast.show(_(msg`An error occurred while trying to follow all`), 'xmark')
+      logger.error('Failed to follow all accounts', {safeMessage: e})
+    }
+
+    setIsProcessing(false)
+    batchedUpdates(() => {
+      for (let did of dids) {
+        updateProfileShadow(queryClient, did, {
+          followingUri: followUris.get(did),
+        })
+      }
+    })
+    Toast.show(_(msg`All accounts have been followed!`))
+    captureAction(ProgressGuideAction.Follow, dids.length)
+    ax.metric('starterPack:followAll', {
+      logContext: 'StarterPackProfilesList',
+      starterPack: starterPack.uri,
+      count: dids.length,
+    })
   }
 
-  if (!AppBskyGraphStarterpack.isRecord(record)) {
+  if (
+    !bsky.dangerousIsType<AppBskyGraphStarterpack.Record>(
+      record,
+      AppBskyGraphStarterpack.isRecord,
+    )
+  ) {
     return null
   }
 
@@ -389,6 +421,7 @@ function Header({
         isOwner={isOwn}
         avatar={undefined}
         creator={creator}
+        purpose="app.bsky.graph.defs#referencelist"
         avatarType="starter-pack">
         {hasSession ? (
           <View style={[a.flex_row, a.gap_sm, a.align_center]}>
@@ -411,11 +444,12 @@ function Header({
                 color="primary"
                 size="small"
                 disabled={isProcessing}
-                onPress={onFollowAll}>
+                onPress={onFollowAll}
+                style={[a.flex_row, a.gap_xs, a.align_center]}>
                 <ButtonText>
                   <Trans>Follow all</Trans>
-                  {isProcessing && <Loader size="xs" />}
                 </ButtonText>
+                {isProcessing && <ButtonIcon icon={Loader} />}
               </Button>
             )}
             <OverflowMenu
@@ -428,9 +462,7 @@ function Header({
       </ProfileSubpageHeader>
       {!hasSession || richText || joinedAllTimeCount >= 25 ? (
         <View style={[a.px_lg, a.pt_md, a.pb_sm, a.gap_md]}>
-          {richText ? (
-            <RichText value={richText} style={[a.text_md, a.leading_snug]} />
-          ) : null}
+          {richText ? <RichText value={richText} style={[a.text_md]} /> : null}
           {!hasSession ? (
             <Button
               label={_(msg`Join Bluesky`)}
@@ -442,7 +474,7 @@ function Header({
               }}
               variant="solid"
               color="primary"
-              size="medium">
+              size="large">
               <ButtonText style={[a.text_lg]}>
                 <Trans>Join Bluesky</Trans>
               </ButtonText>
@@ -456,10 +488,17 @@ function Header({
                 color={t.atoms.text_contrast_medium.color}
               />
               <Text
-                style={[a.font_bold, a.text_sm, t.atoms.text_contrast_medium]}>
-                <Trans>
-                  {starterPack.joinedAllTimeCount || 0} people have used this
-                  starter pack!
+                style={[
+                  a.font_semi_bold,
+                  a.text_sm,
+                  t.atoms.text_contrast_medium,
+                ]}>
+                <Trans comment="Number of users (always at least 25) who have joined Bluesky using a specific starter pack">
+                  <Plural
+                    value={starterPack.joinedAllTimeCount || 0}
+                    other="# people have"
+                  />{' '}
+                  used this starter pack!
                 </Trans>
               </Text>
             </View>
@@ -481,6 +520,7 @@ function OverflowMenu({
 }) {
   const t = useTheme()
   const {_} = useLingui()
+  const ax = useAnalytics()
   const {gtMobile} = useBreakpoints()
   const {currentAccount} = useSession()
   const reportDialogControl = useReportDialogControl()
@@ -493,7 +533,7 @@ function OverflowMenu({
     error: deleteError,
   } = useDeleteStarterPackMutation({
     onSuccess: () => {
-      logEvent('starterPack:delete', {})
+      ax.metric('starterPack:delete', {})
       deleteDialogControl.close(() => {
         if (navigation.canGoBack()) {
           navigation.popToTop()
@@ -519,7 +559,7 @@ function OverflowMenu({
       rkey: routeParams.rkey,
       listUri: starterPack.list.uri,
     })
-    logEvent('starterPack:delete', {})
+    ax.metric('starterPack:delete', {})
   }
 
   return (
@@ -572,19 +612,30 @@ function OverflowMenu({
             <>
               <Menu.Group>
                 <Menu.Item
-                  label={_(msg`Share`)}
+                  label={
+                    IS_WEB
+                      ? _(msg`Copy link to starter pack`)
+                      : _(msg`Share via...`)
+                  }
                   testID="shareStarterPackLinkBtn"
                   onPress={onOpenShareDialog}>
                   <Menu.ItemText>
-                    <Trans>Share link</Trans>
+                    {IS_WEB ? (
+                      <Trans>Copy link</Trans>
+                    ) : (
+                      <Trans>Share via...</Trans>
+                    )}
                   </Menu.ItemText>
-                  <Menu.ItemIcon icon={ArrowOutOfBox} position="right" />
+                  <Menu.ItemIcon
+                    icon={IS_WEB ? ChainLinkIcon : ArrowOutOfBoxIcon}
+                    position="right"
+                  />
                 </Menu.Item>
               </Menu.Group>
 
               <Menu.Item
                 label={_(msg`Report starter pack`)}
-                onPress={reportDialogControl.open}>
+                onPress={() => reportDialogControl.open()}>
                 <Menu.ItemText>
                   <Trans>Report starter pack</Trans>
                 </Menu.ItemText>
@@ -598,10 +649,9 @@ function OverflowMenu({
       {starterPack.list && (
         <ReportDialog
           control={reportDialogControl}
-          params={{
-            type: 'starterpack',
-            uri: starterPack.uri,
-            cid: starterPack.cid,
+          subject={{
+            ...starterPack,
+            $type: 'app.bsky.graph.defs#starterPackView',
           }}
         />
       )}
@@ -611,7 +661,7 @@ function OverflowMenu({
           <Trans>Delete starter pack?</Trans>
         </Prompt.TitleText>
         <Prompt.DescriptionText>
-          <Trans>Are you sure you want delete this starter pack?</Trans>
+          <Trans>Are you sure you want to delete this starter pack?</Trans>
         </Prompt.DescriptionText>
         {deleteError && (
           <View
@@ -626,7 +676,7 @@ function OverflowMenu({
               t.atoms.bg_contrast_25,
             ]}>
             <View style={[a.flex_1, a.gap_2xs]}>
-              <Text style={[a.font_bold]}>
+              <Text style={[a.font_semi_bold]}>
                 <Trans>Unable to delete</Trans>
               </Text>
               <Text style={[a.leading_snug]}>{cleanError(deleteError)}</Text>
@@ -638,7 +688,7 @@ function OverflowMenu({
           <Button
             variant="solid"
             color="negative"
-            size={gtMobile ? 'small' : 'medium'}
+            size={gtMobile ? 'small' : 'large'}
             label={_(msg`Yes, delete this starter pack`)}
             onPress={onDeleteStarterPack}>
             <ButtonText>
@@ -676,69 +726,62 @@ function InvalidStarterPack({rkey}: {rkey: string}) {
     onError: e => {
       setIsProcessing(false)
       logger.error('Failed to delete invalid starter pack', {safeMessage: e})
-      Toast.show(_(msg`Failed to delete starter pack`))
+      Toast.show(_(msg`Failed to delete starter pack`), 'xmark')
     },
   })
 
   return (
-    <CenteredView
-      style={[
-        a.flex_1,
-        a.align_center,
-        a.gap_5xl,
-        !gtMobile && a.justify_between,
-        t.atoms.border_contrast_low,
-        {paddingTop: 175, paddingBottom: 110},
-      ]}
-      sideBorders={true}>
-      <View style={[a.w_full, a.align_center, a.gap_lg]}>
-        <Text style={[a.font_bold, a.text_3xl]}>
-          <Trans>Starter pack is invalid</Trans>
-        </Text>
-        <Text
-          style={[
-            a.text_md,
-            a.text_center,
-            t.atoms.text_contrast_high,
-            {lineHeight: 1.4},
-            gtMobile ? {width: 450} : [a.w_full, a.px_lg],
-          ]}>
-          <Trans>
-            The starter pack that you are trying to view is invalid. You may
-            delete this starter pack instead.
-          </Trans>
-        </Text>
+    <Layout.Content centerContent>
+      <View style={[a.py_4xl, a.px_xl, a.align_center, a.gap_5xl]}>
+        <View style={[a.w_full, a.align_center, a.gap_lg]}>
+          <Text style={[a.font_semi_bold, a.text_3xl]}>
+            <Trans>Starter pack is invalid</Trans>
+          </Text>
+          <Text
+            style={[
+              a.text_md,
+              a.text_center,
+              t.atoms.text_contrast_high,
+              {lineHeight: 1.4},
+              gtMobile ? {width: 450} : [a.w_full, a.px_lg],
+            ]}>
+            <Trans>
+              The starter pack that you are trying to view is invalid. You may
+              delete this starter pack instead.
+            </Trans>
+          </Text>
+        </View>
+        <View style={[a.gap_md, gtMobile ? {width: 350} : [a.w_full, a.px_lg]]}>
+          <Button
+            variant="solid"
+            color="primary"
+            label={_(msg`Delete starter pack`)}
+            size="large"
+            style={[a.rounded_sm, a.overflow_hidden, {paddingVertical: 10}]}
+            disabled={isProcessing}
+            onPress={() => {
+              setIsProcessing(true)
+              deleteStarterPack({rkey})
+            }}>
+            <ButtonText>
+              <Trans>Delete</Trans>
+            </ButtonText>
+            {isProcessing && <Loader size="xs" color="white" />}
+          </Button>
+          <Button
+            variant="solid"
+            color="secondary"
+            label={_(msg`Return to previous page`)}
+            size="large"
+            style={[a.rounded_sm, a.overflow_hidden, {paddingVertical: 10}]}
+            disabled={isProcessing}
+            onPress={goBack}>
+            <ButtonText>
+              <Trans>Go Back</Trans>
+            </ButtonText>
+          </Button>
+        </View>
       </View>
-      <View style={[a.gap_md, gtMobile ? {width: 350} : [a.w_full, a.px_lg]]}>
-        <Button
-          variant="solid"
-          color="primary"
-          label={_(msg`Delete starter pack`)}
-          size="large"
-          style={[a.rounded_sm, a.overflow_hidden, {paddingVertical: 10}]}
-          disabled={isProcessing}
-          onPress={() => {
-            setIsProcessing(true)
-            deleteStarterPack({rkey})
-          }}>
-          <ButtonText>
-            <Trans>Delete</Trans>
-          </ButtonText>
-          {isProcessing && <Loader size="xs" color="white" />}
-        </Button>
-        <Button
-          variant="solid"
-          color="secondary"
-          label={_(msg`Return to previous page`)}
-          size="large"
-          style={[a.rounded_sm, a.overflow_hidden, {paddingVertical: 10}]}
-          disabled={isProcessing}
-          onPress={goBack}>
-          <ButtonText>
-            <Trans>Go Back</Trans>
-          </ButtonText>
-        </Button>
-      </View>
-    </CenteredView>
+    </Layout.Content>
   )
 }

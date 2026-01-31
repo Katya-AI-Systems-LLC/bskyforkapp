@@ -1,20 +1,21 @@
-import React, {useEffect, useState} from 'react'
+import React, {type JSX, useEffect, useState} from 'react'
 import {
-  NativeSyntheticEvent,
-  NativeScrollEvent,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
   Pressable,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   View,
-  ScrollView,
 } from 'react-native'
-import {FlatList_INTERNAL} from './Views'
-import {useColorSchemeStyle} from 'lib/hooks/useColorSchemeStyle'
+
+import {useColorSchemeStyle} from '#/lib/hooks/useColorSchemeStyle'
+import {usePalette} from '#/lib/hooks/usePalette'
+import {clamp} from '#/lib/numbers'
+import {colors, s} from '#/lib/styles'
+import {IS_ANDROID} from '#/env'
 import {Text} from './text/Text'
-import {usePalette} from 'lib/hooks/usePalette'
-import {clamp} from 'lib/numbers'
-import {s, colors} from 'lib/styles'
-import {isAndroid} from 'platform/detection'
+import {FlatList_INTERNAL} from './Views'
 
 const HEADER_ITEM = {_reactKey: '__header__'}
 const SELECTOR_ITEM = {_reactKey: '__selector__'}
@@ -35,7 +36,7 @@ export const ViewSelector = React.forwardRef<
     renderItem: (item: any) => JSX.Element
     ListFooterComponent?:
       | React.ComponentType<any>
-      | React.ReactElement
+      | React.ReactElement<any>
       | null
       | undefined
     onSelectView?: (viewIndex: number) => void
@@ -112,13 +113,14 @@ export const ViewSelector = React.forwardRef<
   )
   return (
     <FlatList_INTERNAL
+      // @ts-expect-error FlatList_INTERNAL ref type is wrong -sfn
       ref={flatListRef}
       data={data}
       keyExtractor={keyExtractor}
       renderItem={renderItemInternal}
       ListFooterComponent={ListFooterComponent}
       // NOTE sticky header disabled on android due to major performance issues -prf
-      stickyHeaderIndices={isAndroid ? undefined : STICKY_HEADER_INDICES}
+      stickyHeaderIndices={IS_ANDROID ? undefined : STICKY_HEADER_INDICES}
       onScroll={onScroll}
       onEndReached={onEndReached}
       refreshControl={

@@ -1,10 +1,9 @@
-import React from 'react'
-import {StyleSheet, TextProps} from 'react-native'
-import type {PathProps, SvgProps} from 'react-native-svg'
+import {StyleSheet, type TextProps} from 'react-native'
+import {type PathProps, type SvgProps} from 'react-native-svg'
 import {Defs, LinearGradient, Stop} from 'react-native-svg'
 import {nanoid} from 'nanoid/non-secure'
 
-import {tokens} from '#/alf'
+import {tokens, useTheme} from '#/alf'
 
 export type Props = {
   fill?: PathProps['fill']
@@ -14,18 +13,22 @@ export type Props = {
 } & Omit<SvgProps, 'style' | 'size'>
 
 export const sizes = {
+  '2xs': 8,
   xs: 12,
   sm: 16,
   md: 20,
   lg: 24,
   xl: 28,
-}
+  '2xl': 32,
+  '3xl': 48,
+} as const
 
 export function useCommonSVGProps(props: Props) {
+  const t = useTheme()
   const {fill, size, gradient, ...rest} = props
   const style = StyleSheet.flatten(rest.style)
   const _size = Number(size ? sizes[size] : rest.width || sizes.md)
-  let _fill = fill || style?.color || tokens.color.blue_500
+  let _fill = fill || style?.color || t.palette.primary_500
   let gradientDef = null
 
   if (gradient && tokens.gradients[gradient]) {

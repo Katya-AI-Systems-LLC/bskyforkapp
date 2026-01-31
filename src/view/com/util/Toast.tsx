@@ -1,87 +1,50 @@
-import RootSiblings from 'react-native-root-siblings'
-import React from 'react'
-import {Animated, StyleSheet, View} from 'react-native'
-import {Props as FontAwesomeProps} from '@fortawesome/react-native-fontawesome'
-import {Text} from './text/Text'
-import {colors} from 'lib/styles'
-import {useTheme} from 'lib/ThemeContext'
-import {usePalette} from 'lib/hooks/usePalette'
-import {useAnimatedValue} from 'lib/hooks/useAnimatedValue'
-import {IS_TEST} from '#/env'
+import * as toast from '#/components/Toast'
+import {type ToastType} from '#/components/Toast/types'
 
-const TIMEOUT = 4e3
+/**
+ * @deprecated use {@link ToastType} and {@link toast} instead
+ */
+export type LegacyToastType =
+  | 'xmark'
+  | 'exclamation-circle'
+  | 'check'
+  | 'clipboard-check'
+  | 'circle-exclamation'
 
+export const convertLegacyToastType = (
+  type: ToastType | LegacyToastType,
+): ToastType => {
+  switch (type) {
+    // these ones are fine
+    case 'default':
+    case 'success':
+    case 'error':
+    case 'warning':
+    case 'info':
+      return type
+    // legacy ones need conversion
+    case 'xmark':
+      return 'error'
+    case 'exclamation-circle':
+      return 'warning'
+    case 'check':
+      return 'success'
+    case 'clipboard-check':
+      return 'success'
+    case 'circle-exclamation':
+      return 'warning'
+    default:
+      return 'default'
+  }
+}
+
+/**
+ * @deprecated use {@link toast} instead
+ */
 export function show(
   message: string,
-  _icon: FontAwesomeProps['icon'] = 'check',
-) {
-  if (IS_TEST) return
-  const item = new RootSiblings(<Toast message={message} />)
-  setTimeout(() => {
-    item.destroy()
-  }, TIMEOUT)
+  type: ToastType | LegacyToastType = 'default',
+): void {
+  const convertedType = convertLegacyToastType(type)
+  toast.show(message, {type: convertedType})
 }
-
-function Toast({message}: {message: string}) {
-  const theme = useTheme()
-  const pal = usePalette('default')
-  const interp = useAnimatedValue(0)
-
-  React.useEffect(() => {
-    Animated.sequence([
-      Animated.timing(interp, {
-        toValue: 1,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-      Animated.delay(3700),
-      Animated.timing(interp, {
-        toValue: 0,
-        duration: 150,
-        useNativeDriver: true,
-      }),
-    ]).start()
-  })
-
-  const opacityStyle = {opacity: interp}
-  return (
-    <View style={styles.container} pointerEvents="none">
-      <Animated.View
-        style={[
-          pal.view,
-          pal.border,
-          styles.toast,
-          theme.colorScheme === 'dark' && styles.toastDark,
-          opacityStyle,
-        ]}>
-        <Text type="lg-medium" style={pal.text}>
-          {message}
-        </Text>
-      </Animated.View>
-    </View>
-  )
-}
-
-const styles = StyleSheet.create({
-  container: {
-    position: 'absolute',
-    top: 60,
-    left: 0,
-    right: 0,
-    alignItems: 'center',
-  },
-  toast: {
-    paddingHorizontal: 18,
-    paddingVertical: 10,
-    borderRadius: 24,
-    borderWidth: 1,
-    shadowColor: '#000',
-    shadowOpacity: 0.1,
-    shadowOffset: {width: 0, height: 4},
-    marginHorizontal: 6,
-  },
-  toastDark: {
-    backgroundColor: colors.gray6,
-    shadowOpacity: 0.5,
-  },
-})

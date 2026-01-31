@@ -1,21 +1,93 @@
-import React, {useRef, useState} from 'react'
-import {AppState, AppStateStatus} from 'react-native'
+import {useEffect, useRef, useState} from 'react'
+import {AppState, type AppStateStatus} from 'react-native'
 import AsyncStorage from '@react-native-async-storage/async-storage'
 import {createAsyncStoragePersister} from '@tanstack/query-async-storage-persister'
-import {focusManager, QueryClient} from '@tanstack/react-query'
+import {focusManager, onlineManager, QueryClient} from '@tanstack/react-query'
 import {
   PersistQueryClientProvider,
-  PersistQueryClientProviderProps,
+  type PersistQueryClientProviderProps,
 } from '@tanstack/react-query-persist-client'
+import type React from 'react'
 
-import {isNative} from '#/platform/detection'
+import {listenNetworkConfirmed, listenNetworkLost} from '#/state/events'
+import {IS_NATIVE, IS_WEB} from '#/env'
+
+declare global {
+  interface Window {
+    __TANSTACK_QUERY_CLIENT__: import('@tanstack/query-core').QueryClient
+  }
+}
 
 // any query keys in this array will be persisted to AsyncStorage
 export const labelersDetailedInfoQueryKeyRoot = 'labelers-detailed-info'
 const STORED_CACHE_QUERY_KEY_ROOTS = [labelersDetailedInfoQueryKeyRoot]
 
+async function checkIsOnline(): Promise<boolean> {
+  try {
+    const controller = new AbortController()
+    setTimeout(() => {
+      controller.abort()
+    }, 15e3)
+    const res = await fetch('https://public.api.bsky.app/xrpc/_health', {
+      cache: 'no-store',
+      signal: controller.signal,
+    })
+    const json = await res.json()
+    if (json.version) {
+      return true
+    } else {
+      return false
+    }
+  } catch (e) {
+    return false
+  }
+}
+
+let receivedNetworkLost = false
+let receivedNetworkConfirmed = false
+let isNetworkStateUnclear = false
+
+listenNetworkLost(() => {
+  receivedNetworkLost = true
+  onlineManager.setOnline(false)
+})
+
+listenNetworkConfirmed(() => {
+  receivedNetworkConfirmed = true
+  onlineManager.setOnline(true)
+})
+
+let checkPromise: Promise<void> | undefined
+function checkIsOnlineIfNeeded() {
+  if (checkPromise) {
+    return
+  }
+  receivedNetworkLost = false
+  receivedNetworkConfirmed = false
+  checkPromise = checkIsOnline().then(nextIsOnline => {
+    checkPromise = undefined
+    if (nextIsOnline && receivedNetworkLost) {
+      isNetworkStateUnclear = true
+    }
+    if (!nextIsOnline && receivedNetworkConfirmed) {
+      isNetworkStateUnclear = true
+    }
+    if (!isNetworkStateUnclear) {
+      onlineManager.setOnline(nextIsOnline)
+    }
+  })
+}
+
+setInterval(() => {
+  if (AppState.currentState === 'active') {
+    if (!onlineManager.isOnline() || isNetworkStateUnclear) {
+      checkIsOnlineIfNeeded()
+    }
+  }
+}, 2000)
+
 focusManager.setEventListener(onFocus => {
-  if (isNative) {
+  if (IS_NATIVE) {
     const subscription = AppState.addEventListener(
       'change',
       (status: AppStateStatus) => {
@@ -114,6 +186,11 @@ function QueryProviderInner({
       dehydrateOptions,
     }
   })
+  useEffect(() => {
+    if (IS_WEB) {
+      window.__TANSTACK_QUERY_CLIENT__ = queryClient
+    }
+  }, [queryClient])
   return (
     <PersistQueryClientProvider
       client={queryClient}

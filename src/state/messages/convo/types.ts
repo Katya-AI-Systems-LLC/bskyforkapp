@@ -1,16 +1,19 @@
 import {
-  AppBskyActorDefs,
-  BskyAgent,
-  ChatBskyConvoDefs,
-  ChatBskyConvoSendMessage,
+  type BskyAgent,
+  type ChatBskyActorDefs,
+  type ChatBskyConvoDefs,
+  type ChatBskyConvoSendMessage,
 } from '@atproto/api'
 
-import {MessagesEventBus} from '#/state/messages/events/agent'
+import {type MessagesEventBus} from '#/state/messages/events/agent'
 
 export type ConvoParams = {
   convoId: string
   agent: BskyAgent
   events: MessagesEventBus
+  placeholderData?: {
+    convo: ChatBskyConvoDefs.ConvoView
+  }
 }
 
 export enum ConvoStatus {
@@ -87,12 +90,20 @@ export type ConvoItem =
         | ChatBskyConvoDefs.MessageView
         | ChatBskyConvoDefs.DeletedMessageView
         | null
+      prevMessage:
+        | ChatBskyConvoDefs.MessageView
+        | ChatBskyConvoDefs.DeletedMessageView
+        | null
     }
   | {
       type: 'pending-message'
       key: string
       message: ChatBskyConvoDefs.MessageView
       nextMessage:
+        | ChatBskyConvoDefs.MessageView
+        | ChatBskyConvoDefs.DeletedMessageView
+        | null
+      prevMessage:
         | ChatBskyConvoDefs.MessageView
         | ChatBskyConvoDefs.DeletedMessageView
         | null
@@ -107,6 +118,10 @@ export type ConvoItem =
       key: string
       message: ChatBskyConvoDefs.DeletedMessageView
       nextMessage:
+        | ChatBskyConvoDefs.MessageView
+        | ChatBskyConvoDefs.DeletedMessageView
+        | null
+      prevMessage:
         | ChatBskyConvoDefs.MessageView
         | ChatBskyConvoDefs.DeletedMessageView
         | null
@@ -126,66 +141,84 @@ type SendMessage = (
   message: ChatBskyConvoSendMessage.InputSchema['message'],
 ) => void
 type FetchMessageHistory = () => Promise<void>
+type MarkConvoAccepted = () => void
+type AddReaction = (messageId: string, reaction: string) => Promise<void>
+type RemoveReaction = (messageId: string, reaction: string) => Promise<void>
 
 export type ConvoStateUninitialized = {
   status: ConvoStatus.Uninitialized
   items: []
-  convo: undefined
+  convo: ChatBskyConvoDefs.ConvoView | undefined
   error: undefined
-  sender: undefined
-  recipients: undefined
+  sender: ChatBskyActorDefs.ProfileViewBasic | undefined
+  recipients: ChatBskyActorDefs.ProfileViewBasic[] | undefined
   isFetchingHistory: false
   deleteMessage: undefined
   sendMessage: undefined
   fetchMessageHistory: undefined
+  markConvoAccepted: undefined
+  addReaction: undefined
+  removeReaction: undefined
 }
 export type ConvoStateInitializing = {
   status: ConvoStatus.Initializing
   items: []
-  convo: undefined
+  convo: ChatBskyConvoDefs.ConvoView | undefined
   error: undefined
-  sender: undefined
-  recipients: undefined
+  sender: ChatBskyActorDefs.ProfileViewBasic | undefined
+  recipients: ChatBskyActorDefs.ProfileViewBasic[] | undefined
   isFetchingHistory: boolean
   deleteMessage: undefined
   sendMessage: undefined
   fetchMessageHistory: undefined
+  markConvoAccepted: undefined
+  addReaction: undefined
+  removeReaction: undefined
 }
 export type ConvoStateReady = {
   status: ConvoStatus.Ready
   items: ConvoItem[]
   convo: ChatBskyConvoDefs.ConvoView
   error: undefined
-  sender: AppBskyActorDefs.ProfileViewBasic
-  recipients: AppBskyActorDefs.ProfileViewBasic[]
+  sender: ChatBskyActorDefs.ProfileViewBasic
+  recipients: ChatBskyActorDefs.ProfileViewBasic[]
   isFetchingHistory: boolean
   deleteMessage: DeleteMessage
   sendMessage: SendMessage
   fetchMessageHistory: FetchMessageHistory
+  markConvoAccepted: MarkConvoAccepted
+  addReaction: AddReaction
+  removeReaction: RemoveReaction
 }
 export type ConvoStateBackgrounded = {
   status: ConvoStatus.Backgrounded
   items: ConvoItem[]
   convo: ChatBskyConvoDefs.ConvoView
   error: undefined
-  sender: AppBskyActorDefs.ProfileViewBasic
-  recipients: AppBskyActorDefs.ProfileViewBasic[]
+  sender: ChatBskyActorDefs.ProfileViewBasic
+  recipients: ChatBskyActorDefs.ProfileViewBasic[]
   isFetchingHistory: boolean
   deleteMessage: DeleteMessage
   sendMessage: SendMessage
   fetchMessageHistory: FetchMessageHistory
+  markConvoAccepted: MarkConvoAccepted
+  addReaction: AddReaction
+  removeReaction: RemoveReaction
 }
 export type ConvoStateSuspended = {
   status: ConvoStatus.Suspended
   items: ConvoItem[]
   convo: ChatBskyConvoDefs.ConvoView
   error: undefined
-  sender: AppBskyActorDefs.ProfileViewBasic
-  recipients: AppBskyActorDefs.ProfileViewBasic[]
+  sender: ChatBskyActorDefs.ProfileViewBasic
+  recipients: ChatBskyActorDefs.ProfileViewBasic[]
   isFetchingHistory: boolean
   deleteMessage: DeleteMessage
   sendMessage: SendMessage
   fetchMessageHistory: FetchMessageHistory
+  markConvoAccepted: MarkConvoAccepted
+  addReaction: AddReaction
+  removeReaction: RemoveReaction
 }
 export type ConvoStateError = {
   status: ConvoStatus.Error
@@ -198,18 +231,24 @@ export type ConvoStateError = {
   deleteMessage: undefined
   sendMessage: undefined
   fetchMessageHistory: undefined
+  markConvoAccepted: undefined
+  addReaction: undefined
+  removeReaction: undefined
 }
 export type ConvoStateDisabled = {
   status: ConvoStatus.Disabled
   items: ConvoItem[]
   convo: ChatBskyConvoDefs.ConvoView
   error: undefined
-  sender: AppBskyActorDefs.ProfileViewBasic
-  recipients: AppBskyActorDefs.ProfileViewBasic[]
+  sender: ChatBskyActorDefs.ProfileViewBasic
+  recipients: ChatBskyActorDefs.ProfileViewBasic[]
   isFetchingHistory: boolean
   deleteMessage: DeleteMessage
   sendMessage: SendMessage
   fetchMessageHistory: FetchMessageHistory
+  markConvoAccepted: MarkConvoAccepted
+  addReaction: AddReaction
+  removeReaction: RemoveReaction
 }
 export type ConvoState =
   | ConvoStateUninitialized

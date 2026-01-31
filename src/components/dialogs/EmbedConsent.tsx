@@ -1,4 +1,4 @@
-import React, {useCallback} from 'react'
+import {useCallback} from 'react'
 import {View} from 'react-native'
 import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
@@ -10,9 +10,9 @@ import {
 } from '#/lib/strings/embed-player'
 import {useSetExternalEmbedPref} from '#/state/preferences'
 import {atoms as a, useBreakpoints, useTheme} from '#/alf'
+import {Button, ButtonText} from '#/components/Button'
 import * as Dialog from '#/components/Dialog'
-import {Button, ButtonText} from '../Button'
-import {Text} from '../Typography'
+import {Text} from '#/components/Typography'
 
 export function EmbedConsentDialog({
   control,
@@ -48,14 +48,13 @@ export function EmbedConsentDialog({
   }, [control, setExternalEmbedPref, source])
 
   return (
-    <Dialog.Outer control={control}>
+    <Dialog.Outer control={control} nativeOptions={{preventExpansion: true}}>
       <Dialog.Handle />
-
       <Dialog.ScrollableInner
         label={_(msg`External Media`)}
         style={[gtMobile ? {width: 'auto', maxWidth: 400} : a.w_full]}>
         <View style={a.gap_sm}>
-          <Text style={[a.text_2xl, a.font_bold]}>
+          <Text style={[a.text_2xl, a.font_semi_bold]}>
             <Trans>External Media</Trans>
           </Text>
 
@@ -83,7 +82,7 @@ export function EmbedConsentDialog({
             onPress={onShowAllPress}
             onAccessibilityEscape={control.close}
             color="primary"
-            size="medium"
+            size="large"
             variant="solid">
             <ButtonText>
               <Trans>Enable external media</Trans>
@@ -95,7 +94,7 @@ export function EmbedConsentDialog({
             onPress={onShowPress}
             onAccessibilityEscape={control.close}
             color="secondary"
-            size="medium"
+            size="large"
             variant="solid">
             <ButtonText>
               <Trans>Enable {externalEmbedLabels[source]} only</Trans>
@@ -106,7 +105,7 @@ export function EmbedConsentDialog({
             onAccessibilityEscape={control.close}
             onPress={onHidePress}
             color="secondary"
-            size="medium"
+            size="large"
             variant="ghost">
             <ButtonText>
               <Trans>No thanks</Trans>

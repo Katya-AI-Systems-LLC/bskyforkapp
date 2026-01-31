@@ -1,14 +1,14 @@
 import React from 'react'
 import {
-  AppBskyActorDefs,
-  AppBskyGraphDefs,
+  type AppBskyFeedDefs,
+  type AppBskyGraphDefs,
   AppBskyGraphStarterpack,
 } from '@atproto/api'
-import {GeneratorView} from '@atproto/api/dist/client/types/app/bsky/feed/defs'
-import {msg} from '@lingui/macro'
+import {msg, plural} from '@lingui/macro'
 
-import {useSession} from 'state/session'
+import {STARTER_PACK_MAX_SIZE} from '#/lib/constants'
 import * as Toast from '#/view/com/util/Toast'
+import * as bsky from '#/types/bsky'
 
 const steps = ['Details', 'Profiles', 'Feeds'] as const
 type Step = (typeof steps)[number]
@@ -19,9 +19,9 @@ type Action =
   | {type: 'SetCanNext'; canNext: boolean}
   | {type: 'SetName'; name: string}
   | {type: 'SetDescription'; description: string}
-  | {type: 'AddProfile'; profile: AppBskyActorDefs.ProfileViewBasic}
+  | {type: 'AddProfile'; profile: bsky.profile.AnyProfileView}
   | {type: 'RemoveProfile'; profileDid: string}
-  | {type: 'AddFeed'; feed: GeneratorView}
+  | {type: 'AddFeed'; feed: AppBskyFeedDefs.GeneratorView}
   | {type: 'RemoveFeed'; feedUri: string}
   | {type: 'SetProcessing'; processing: boolean}
   | {type: 'SetError'; error: string}
@@ -31,11 +31,12 @@ interface State {
   currentStep: Step
   name?: string
   description?: string
-  profiles: AppBskyActorDefs.ProfileViewBasic[]
-  feeds: GeneratorView[]
+  profiles: bsky.profile.AnyProfileView[]
+  feeds: AppBskyFeedDefs.GeneratorView[]
   processing: boolean
   error?: string
   transitionDirection: 'Backward' | 'Forward'
+  targetDid?: string
 }
 
 type TStateContext = [State, (action: Action) => void]
@@ -44,6 +45,7 @@ const StateContext = React.createContext<TStateContext>([
   {} as State,
   (_: Action) => {},
 ])
+StateContext.displayName = 'StarterPackWizardStateContext'
 export const useWizardState = () => React.useContext(StateContext)
 
 function reducer(state: State, action: Action): State {
@@ -73,8 +75,13 @@ function reducer(state: State, action: Action): State {
       updatedState = {...state, description: action.description}
       break
     case 'AddProfile':
-      if (state.profiles.length >= 51) {
-        Toast.show(msg`You may only add up to 50 profiles`.message ?? '')
+      if (state.profiles.length > STARTER_PACK_MAX_SIZE) {
+        Toast.show(
+          msg`You may only add up to ${plural(STARTER_PACK_MAX_SIZE, {
+            other: `${STARTER_PACK_MAX_SIZE} profiles`,
+          })}`.message ?? '',
+          'info',
+        )
       } else {
         updatedState = {...state, profiles: [...state.profiles, action.profile]}
       }
@@ -88,8 +95,8 @@ function reducer(state: State, action: Action): State {
       }
       break
     case 'AddFeed':
-      if (state.feeds.length >= 50) {
-        Toast.show(msg`You may only add up to 50 feeds`.message ?? '')
+      if (state.feeds.length >= 3) {
+        Toast.show(msg`You may only add up to 3 feeds`.message ?? '', 'info')
       } else {
         updatedState = {...state, feeds: [...state.feeds, action.feed]}
       }
@@ -108,42 +115,45 @@ function reducer(state: State, action: Action): State {
   return updatedState
 }
 
-// TODO supply the initial state to this component
 export function Provider({
   starterPack,
   listItems,
+  targetProfile,
   children,
 }: {
   starterPack?: AppBskyGraphDefs.StarterPackView
   listItems?: AppBskyGraphDefs.ListItemView[]
+  targetProfile: bsky.profile.AnyProfileView
   children: React.ReactNode
 }) {
-  const {currentAccount} = useSession()
-
   const createInitialState = (): State => {
-    if (starterPack && AppBskyGraphStarterpack.isRecord(starterPack.record)) {
+    const targetDid = targetProfile?.did
+
+    if (
+      starterPack &&
+      bsky.validate(starterPack.record, AppBskyGraphStarterpack.validateRecord)
+    ) {
       return {
         canNext: true,
         currentStep: 'Details',
         name: starterPack.record.name,
         description: starterPack.record.description,
-        profiles:
-          listItems
-            ?.map(i => i.subject)
-            .filter(p => p.did !== currentAccount?.did) ?? [],
+        profiles: listItems?.map(i => i.subject) ?? [],
         feeds: starterPack.feeds ?? [],
         processing: false,
         transitionDirection: 'Forward',
+        targetDid,
       }
     }
 
     return {
       canNext: true,
       currentStep: 'Details',
-      profiles: [],
+      profiles: [targetProfile],
       feeds: [],
       processing: false,
       transitionDirection: 'Forward',
+      targetDid,
     }
   }
 

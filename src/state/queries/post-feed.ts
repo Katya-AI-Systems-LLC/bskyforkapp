@@ -1,37 +1,41 @@
 import React, {useCallback, useEffect, useRef} from 'react'
 import {AppState} from 'react-native'
 import {
-  AppBskyActorDefs,
+  type AppBskyActorDefs,
   AppBskyFeedDefs,
-  AppBskyFeedPost,
+  type AppBskyFeedPost,
   AtUri,
-  BskyAgent,
-  ModerationDecision,
+  type BskyAgent,
+  moderatePost,
+  type ModerationDecision,
+  type ModerationPrefs,
 } from '@atproto/api'
 import {
-  InfiniteData,
-  QueryClient,
-  QueryKey,
+  type InfiniteData,
+  type QueryClient,
+  type QueryKey,
   useInfiniteQuery,
 } from '@tanstack/react-query'
 
+import {AuthorFeedAPI} from '#/lib/api/feed/author'
+import {CustomFeedAPI} from '#/lib/api/feed/custom'
+import {DemoFeedAPI} from '#/lib/api/feed/demo'
+import {FollowingFeedAPI} from '#/lib/api/feed/following'
 import {HomeFeedAPI} from '#/lib/api/feed/home'
+import {LikesFeedAPI} from '#/lib/api/feed/likes'
+import {ListFeedAPI} from '#/lib/api/feed/list'
+import {MergeFeedAPI} from '#/lib/api/feed/merge'
+import {PostListFeedAPI} from '#/lib/api/feed/posts'
+import {type FeedAPI, type ReasonFeedSource} from '#/lib/api/feed/types'
 import {aggregateUserInterests} from '#/lib/api/feed/utils'
-import {moderatePost_wrapped as moderatePost} from '#/lib/moderatePost_wrapped'
+import {FeedTuner, type FeedTunerFn} from '#/lib/api/feed-manip'
+import {DISCOVER_FEED_URI} from '#/lib/constants'
 import {logger} from '#/logger'
 import {STALE} from '#/state/queries'
 import {DEFAULT_LOGGED_OUT_PREFERENCES} from '#/state/queries/preferences/const'
 import {useAgent} from '#/state/session'
-import {AuthorFeedAPI} from 'lib/api/feed/author'
-import {CustomFeedAPI} from 'lib/api/feed/custom'
-import {FollowingFeedAPI} from 'lib/api/feed/following'
-import {LikesFeedAPI} from 'lib/api/feed/likes'
-import {ListFeedAPI} from 'lib/api/feed/list'
-import {MergeFeedAPI} from 'lib/api/feed/merge'
-import {FeedAPI, ReasonFeedSource} from 'lib/api/feed/types'
-import {FeedTuner, FeedTunerFn, NoopFeedTuner} from 'lib/api/feed-manip'
-import {BSKY_FEED_OWNER_DIDS} from 'lib/constants'
-import {KnownError} from '#/view/com/posts/FeedErrorMessage'
+import * as userActionHistory from '#/state/userActionHistory'
+import {KnownError} from '#/view/com/posts/PostFeedErrorMessage'
 import {useFeedTuners} from '../preferences/feed-tuners'
 import {useModerationOpts} from '../preferences/moderation-opts'
 import {usePreferencesQuery} from './preferences'
@@ -42,14 +46,15 @@ import {
 } from './util'
 
 type ActorDid = string
-type AuthorFilter =
+export type AuthorFilter =
   | 'posts_with_replies'
   | 'posts_no_replies'
   | 'posts_and_author_threads'
   | 'posts_with_media'
+  | 'posts_with_video'
 type FeedUri = string
 type ListUri = string
-type ListFilter = 'as_following' // Applies current Following settings. Currently client-side.
+type PostsUriList = string
 
 export type FeedDescriptor =
   | 'following'
@@ -57,16 +62,17 @@ export type FeedDescriptor =
   | `feedgen|${FeedUri}`
   | `likes|${ActorDid}`
   | `list|${ListUri}`
-  | `list|${ListUri}|${ListFilter}`
+  | `posts|${PostsUriList}`
+  | 'demo'
 export interface FeedParams {
-  disableTuner?: boolean
   mergeFeedEnabled?: boolean
   mergeFeedSources?: string[]
+  feedCacheKey?: 'discover' | 'explore' | undefined
 }
 
 type RQPageParam = {cursor: string | undefined; api: FeedAPI} | undefined
 
-const RQKEY_ROOT = 'post-feed'
+export const RQKEY_ROOT = 'post-feed'
 export function RQKEY(feedDesc: FeedDescriptor, params?: FeedParams) {
   return [RQKEY_ROOT, feedDesc, params || {}]
 }
@@ -76,19 +82,26 @@ export interface FeedPostSliceItem {
   uri: string
   post: AppBskyFeedDefs.PostView
   record: AppBskyFeedPost.Record
-  reason?: AppBskyFeedDefs.ReasonRepost | ReasonFeedSource
-  feedContext: string | undefined
   moderation: ModerationDecision
   parentAuthor?: AppBskyActorDefs.ProfileViewBasic
   isParentBlocked?: boolean
+  isParentNotFound?: boolean
 }
 
 export interface FeedPostSlice {
   _isFeedPostSlice: boolean
   _reactKey: string
-  rootUri: string
-  isThread: boolean
   items: FeedPostSliceItem[]
+  isIncompleteThread: boolean
+  isFallbackMarker: boolean
+  feedContext: string | undefined
+  reqId: string | undefined
+  feedPostUri: string
+  reason?:
+    | AppBskyFeedDefs.ReasonRepost
+    | AppBskyFeedDefs.ReasonPin
+    | ReasonFeedSource
+    | {[k: string]: unknown; $type: string}
 }
 
 export interface FeedPageUnselected {
@@ -100,13 +113,18 @@ export interface FeedPageUnselected {
 
 export interface FeedPage {
   api: FeedAPI
-  tuner: FeedTuner | NoopFeedTuner
+  tuner: FeedTuner
   cursor: string | undefined
   slices: FeedPostSlice[]
   fetchedAt: number
 }
 
-const PAGE_SIZE = 30
+/**
+ * The minimum number of posts we want in a single "page" of results. Since we
+ * filter out unwanted content, we may fetch more than this number to ensure
+ * that we get _at least_ this number.
+ */
+const MIN_POSTS = 30
 
 export function usePostFeedQuery(
   feedDesc: FeedDescriptor,
@@ -116,6 +134,12 @@ export function usePostFeedQuery(
   const feedTuners = useFeedTuners(feedDesc)
   const moderationOpts = useModerationOpts()
   const {data: preferences} = usePreferencesQuery()
+  /**
+   * Load bearing: we need to await AA state or risk FOUC. This marginally
+   * delays feeds, but AA state is fetched immediately on load and is then
+   * available for the remainder of the session, so this delay only affects cold
+   * loads. -esb
+   */
   const enabled =
     opts?.enabled !== false && Boolean(moderationOpts) && Boolean(preferences)
   const userInterests = aggregateUserInterests(preferences)
@@ -130,17 +154,24 @@ export function usePostFeedQuery(
     args: typeof selectArgs
     result: InfiniteData<FeedPage>
   } | null>(null)
-  const lastPageCountRef = useRef(0)
+  const isDiscover = feedDesc.includes(DISCOVER_FEED_URI)
+
+  /**
+   * The number of posts to fetch in a single request. Because we filter
+   * unwanted content, we may over-fetch here to try and fill pages by
+   * `MIN_POSTS`. But if you're doing this, ask @why if it's ok first.
+   */
+  const fetchLimit = MIN_POSTS
 
   // Make sure this doesn't invalidate unless really needed.
   const selectArgs = React.useMemo(
     () => ({
       feedTuners,
-      disableTuner: params?.disableTuner,
       moderationOpts,
       ignoreFilterFor: opts?.ignoreFilterFor,
+      isDiscover,
     }),
-    [feedTuners, params?.disableTuner, moderationOpts, opts?.ignoreFilterFor],
+    [feedTuners, moderationOpts, opts?.ignoreFilterFor, isDiscover],
   )
 
   const query = useInfiniteQuery<
@@ -171,40 +202,27 @@ export function usePostFeedQuery(
             cursor: undefined,
           }
 
-      try {
-        const res = await api.fetch({cursor, limit: PAGE_SIZE})
+      const res = await api.fetch({cursor, limit: fetchLimit})
 
-        /*
-         * If this is a public view, we need to check if posts fail moderation.
-         * If all fail, we throw an error. If only some fail, we continue and let
-         * moderations happen later, which results in some posts being shown and
-         * some not.
-         */
-        if (!agent.session) {
-          assertSomePostsPassModeration(res.feed)
-        }
+      /*
+       * If this is a public view, we need to check if posts fail moderation.
+       * If all fail, we throw an error. If only some fail, we continue and let
+       * moderations happen later, which results in some posts being shown and
+       * some not.
+       */
+      if (!agent.session) {
+        assertSomePostsPassModeration(
+          res.feed,
+          preferences?.moderationPrefs ||
+            DEFAULT_LOGGED_OUT_PREFERENCES.moderationPrefs,
+        )
+      }
 
-        return {
-          api,
-          cursor: res.cursor,
-          feed: res.feed,
-          fetchedAt: Date.now(),
-        }
-      } catch (e) {
-        const feedDescParts = feedDesc.split('|')
-        const feedOwnerDid = new AtUri(feedDescParts[1]).hostname
-
-        if (
-          feedDescParts[0] === 'feedgen' &&
-          BSKY_FEED_OWNER_DIDS.includes(feedOwnerDid)
-        ) {
-          logger.error(`Bluesky feed may be offline: ${feedOwnerDid}`, {
-            feedDesc,
-            jsError: e,
-          })
-        }
-
-        throw e
+      return {
+        api,
+        cursor: res.cursor,
+        feed: res.feed,
+        fetchedAt: Date.now(),
       }
     },
     initialPageParam: undefined,
@@ -219,12 +237,10 @@ export function usePostFeedQuery(
       (data: InfiniteData<FeedPageUnselected, RQPageParam>) => {
         // If the selection depends on some data, that data should
         // be included in the selectArgs object and read here.
-        const {feedTuners, disableTuner, moderationOpts, ignoreFilterFor} =
+        const {feedTuners, moderationOpts, ignoreFilterFor, isDiscover} =
           selectArgs
 
-        const tuner = disableTuner
-          ? new NoopFeedTuner()
-          : new FeedTuner(feedTuners)
+        const tuner = new FeedTuner(feedTuners)
 
         // Keep track of the last run and whether we can reuse
         // some already selected pages from there.
@@ -293,53 +309,48 @@ export function usePostFeedQuery(
                     }
                   }
 
-                  return {
+                  if (isDiscover) {
+                    userActionHistory.seen(
+                      slice.items.map(item => ({
+                        feedContext: slice.feedContext,
+                        reqId: slice.reqId,
+                        likeCount: item.post.likeCount ?? 0,
+                        repostCount: item.post.repostCount ?? 0,
+                        replyCount: item.post.replyCount ?? 0,
+                        isFollowedBy: Boolean(
+                          item.post.author.viewer?.followedBy,
+                        ),
+                        uri: item.post.uri,
+                      })),
+                    )
+                  }
+
+                  const feedPostSlice: FeedPostSlice = {
                     _reactKey: slice._reactKey,
                     _isFeedPostSlice: true,
-                    rootUri: slice.rootItem.post.uri,
-                    isThread:
-                      slice.items.length > 1 &&
-                      slice.items.every(
-                        item =>
-                          item.post.author.did ===
-                          slice.items[0].post.author.did,
-                      ),
-                    items: slice.items
-                      .map((item, i) => {
-                        if (
-                          AppBskyFeedPost.isRecord(item.post.record) &&
-                          AppBskyFeedPost.validateRecord(item.post.record)
-                            .success
-                        ) {
-                          const parentAuthor =
-                            item.reply?.parent?.author ??
-                            slice.items[i + 1]?.reply?.grandparentAuthor
-                          const replyRef = item.reply
-                          const isParentBlocked = AppBskyFeedDefs.isBlockedPost(
-                            replyRef?.parent,
-                          )
-
-                          return {
-                            _reactKey: `${slice._reactKey}-${i}-${item.post.uri}`,
-                            uri: item.post.uri,
-                            post: item.post,
-                            record: item.post.record,
-                            reason:
-                              i === 0 && slice.source
-                                ? slice.source
-                                : item.reason,
-                            feedContext: item.feedContext || slice.feedContext,
-                            moderation: moderations[i],
-                            parentAuthor,
-                            isParentBlocked,
-                          }
-                        }
-                        return undefined
-                      })
-                      .filter(Boolean) as FeedPostSliceItem[],
+                    isIncompleteThread: slice.isIncompleteThread,
+                    isFallbackMarker: slice.isFallbackMarker,
+                    feedContext: slice.feedContext,
+                    reqId: slice.reqId,
+                    reason: slice.reason,
+                    feedPostUri: slice.feedPostUri,
+                    items: slice.items.map((item, i) => {
+                      const feedPostSliceItem: FeedPostSliceItem = {
+                        _reactKey: `${slice._reactKey}-${i}-${item.post.uri}`,
+                        uri: item.post.uri,
+                        post: item.post,
+                        record: item.record,
+                        moderation: moderations[i],
+                        parentAuthor: item.parentAuthor,
+                        isParentBlocked: item.isParentBlocked,
+                        isParentNotFound: item.isParentNotFound,
+                      }
+                      return feedPostSliceItem
+                    }),
                   }
+                  return feedPostSlice
                 })
-                .filter(Boolean) as FeedPostSlice[],
+                .filter(n => !!n),
             })),
           ],
         }
@@ -351,30 +362,54 @@ export function usePostFeedQuery(
     ),
   })
 
+  // The server may end up returning an empty page, a page with too few items,
+  // or a page with items that end up getting filtered out. When we fetch pages,
+  // we'll keep track of how many items we actually hope to see. If the server
+  // doesn't return enough items, we're going to continue asking for more items.
+  const lastItemCount = useRef(0)
+  const wantedItemCount = useRef(0)
+  const autoPaginationAttemptCount = useRef(0)
   useEffect(() => {
-    const {isFetching, hasNextPage, data} = query
-    if (isFetching || !hasNextPage) {
-      return
-    }
-
-    // avoid double-fires of fetchNextPage()
-    if (
-      lastPageCountRef.current !== 0 &&
-      lastPageCountRef.current === data?.pages?.length
-    ) {
-      return
-    }
-
-    // fetch next page if we haven't gotten a full page of content
-    let count = 0
+    const {data, isLoading, isRefetching, isFetchingNextPage, hasNextPage} =
+      query
+    // Count the items that we already have.
+    let itemCount = 0
     for (const page of data?.pages || []) {
       for (const slice of page.slices) {
-        count += slice.items.length
+        itemCount += slice.items.length
       }
     }
-    if (count < PAGE_SIZE && (data?.pages.length || 0) < 6) {
-      query.fetchNextPage()
-      lastPageCountRef.current = data?.pages?.length || 0
+
+    // If items got truncated, reset the state we're tracking below.
+    if (itemCount !== lastItemCount.current) {
+      if (itemCount < lastItemCount.current) {
+        wantedItemCount.current = itemCount
+      }
+      lastItemCount.current = itemCount
+    }
+
+    // Now track how many items we really want, and fetch more if needed.
+    if (isLoading || isRefetching) {
+      // During the initial fetch, we want to get an entire page's worth of items.
+      wantedItemCount.current = MIN_POSTS
+    } else if (isFetchingNextPage) {
+      if (itemCount > wantedItemCount.current) {
+        // We have more items than wantedItemCount, so wantedItemCount must be out of date.
+        // Some other code must have called fetchNextPage(), for example, from onEndReached.
+        // Adjust the wantedItemCount to reflect that we want one more full page of items.
+        wantedItemCount.current = itemCount + MIN_POSTS
+      }
+    } else if (hasNextPage) {
+      // At this point we're not fetching anymore, so it's time to make a decision.
+      // If we didn't receive enough items from the server, paginate again until we do.
+      if (itemCount < wantedItemCount.current) {
+        autoPaginationAttemptCount.current++
+        if (autoPaginationAttemptCount.current < 50 /* failsafe */) {
+          query.fetchNextPage()
+        }
+      } else {
+        autoPaginationAttemptCount.current = 0
+      }
     }
   }, [query])
 
@@ -394,7 +429,6 @@ export async function pollLatest(page: FeedPage | undefined) {
   if (post) {
     const slices = page.tuner.tune([post], {
       dryRun: true,
-      maintainOrder: true,
     })
     if (slices[0]) {
       return true
@@ -435,21 +469,26 @@ function createApi({
       }
     }
   } else if (feedDesc.startsWith('author')) {
-    const [_, actor, filter] = feedDesc.split('|')
+    const [__, actor, filter] = feedDesc.split('|')
     return new AuthorFeedAPI({agent, feedParams: {actor, filter}})
   } else if (feedDesc.startsWith('likes')) {
-    const [_, actor] = feedDesc.split('|')
+    const [__, actor] = feedDesc.split('|')
     return new LikesFeedAPI({agent, feedParams: {actor}})
   } else if (feedDesc.startsWith('feedgen')) {
-    const [_, feed] = feedDesc.split('|')
+    const [__, feed] = feedDesc.split('|')
     return new CustomFeedAPI({
       agent,
       feedParams: {feed},
       userInterests,
     })
   } else if (feedDesc.startsWith('list')) {
-    const [_, list] = feedDesc.split('|')
+    const [__, list] = feedDesc.split('|')
     return new ListFeedAPI({agent, feedParams: {list}})
+  } else if (feedDesc.startsWith('posts')) {
+    const [__, uriList] = feedDesc.split('|')
+    return new PostListFeedAPI({agent, feedParams: {uris: uriList.split(',')}})
+  } else if (feedDesc === 'demo') {
+    return new DemoFeedAPI({agent})
   } else {
     // shouldnt happen
     return new FollowingFeedAPI({agent})
@@ -514,7 +553,7 @@ export function* findAllPostsInQueryData(
 export function* findAllProfilesInQueryData(
   queryClient: QueryClient,
   did: string,
-): Generator<AppBskyActorDefs.ProfileView, undefined> {
+): Generator<AppBskyActorDefs.ProfileViewBasic, undefined> {
   const queryDatas = queryClient.getQueriesData<
     InfiniteData<FeedPageUnselected>
   >({
@@ -550,7 +589,10 @@ export function* findAllProfilesInQueryData(
   }
 }
 
-function assertSomePostsPassModeration(feed: AppBskyFeedDefs.FeedViewPost[]) {
+function assertSomePostsPassModeration(
+  feed: AppBskyFeedDefs.FeedViewPost[],
+  moderationPrefs: ModerationPrefs,
+) {
   // no posts in this feed
   if (feed.length === 0) return true
 
@@ -560,7 +602,7 @@ function assertSomePostsPassModeration(feed: AppBskyFeedDefs.FeedViewPost[]) {
   for (const item of feed) {
     const moderation = moderatePost(item.post, {
       userDid: undefined,
-      prefs: DEFAULT_LOGGED_OUT_PREFERENCES.moderationPrefs,
+      prefs: moderationPrefs,
     })
 
     if (!moderation.ui('contentList').filter) {
@@ -570,7 +612,7 @@ function assertSomePostsPassModeration(feed: AppBskyFeedDefs.FeedViewPost[]) {
   }
 
   if (!somePostsPassModeration) {
-    throw new Error(KnownError.FeedNSFPublic)
+    throw new Error(KnownError.FeedSignedInOnly)
   }
 }
 

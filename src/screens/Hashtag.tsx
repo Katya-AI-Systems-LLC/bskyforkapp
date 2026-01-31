@@ -1,36 +1,42 @@
 import React from 'react'
-import {ListRenderItemInfo, Pressable, StyleSheet, View} from 'react-native'
-import {PostView} from '@atproto/api/dist/client/types/app/bsky/feed/defs'
-import {msg} from '@lingui/macro'
+import {type ListRenderItemInfo, View} from 'react-native'
+import {type AppBskyFeedDefs} from '@atproto/api'
+import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 import {useFocusEffect} from '@react-navigation/native'
-import {NativeStackScreenProps} from '@react-navigation/native-stack'
+import {type NativeStackScreenProps} from '@react-navigation/native-stack'
 
-import {usePalette} from '#/lib/hooks/usePalette'
-import {HITSLOP_10} from 'lib/constants'
-import {useInitialNumToRender} from 'lib/hooks/useInitialNumToRender'
-import {CommonNavigatorParams} from 'lib/routes/types'
-import {shareUrl} from 'lib/sharing'
-import {cleanError} from 'lib/strings/errors'
-import {sanitizeHandle} from 'lib/strings/handles'
-import {enforceLen} from 'lib/strings/helpers'
-import {isNative, isWeb} from 'platform/detection'
-import {useSearchPostsQuery} from 'state/queries/search-posts'
-import {useSetDrawerSwipeDisabled, useSetMinimalShellMode} from 'state/shell'
+import {HITSLOP_10} from '#/lib/constants'
+import {useInitialNumToRender} from '#/lib/hooks/useInitialNumToRender'
+import {usePostViewTracking} from '#/lib/hooks/usePostViewTracking'
+import {type CommonNavigatorParams} from '#/lib/routes/types'
+import {shareUrl} from '#/lib/sharing'
+import {cleanError} from '#/lib/strings/errors'
+import {sanitizeHandle} from '#/lib/strings/handles'
+import {enforceLen} from '#/lib/strings/helpers'
+import {useSearchPostsQuery} from '#/state/queries/search-posts'
+import {useSession} from '#/state/session'
+import {useSetMinimalShellMode} from '#/state/shell'
+import {useLoggedOutViewControls} from '#/state/shell/logged-out'
+import {useCloseAllActiveElements} from '#/state/util'
 import {Pager} from '#/view/com/pager/Pager'
 import {TabBar} from '#/view/com/pager/TabBar'
-import {CenteredView} from '#/view/com/util/Views'
-import {Post} from 'view/com/post/Post'
-import {List} from 'view/com/util/List'
-import {ViewHeader} from 'view/com/util/ViewHeader'
-import {ArrowOutOfBox_Stroke2_Corner0_Rounded} from '#/components/icons/ArrowOutOfBox'
+import {Post} from '#/view/com/post/Post'
+import {List} from '#/view/com/util/List'
+import {atoms as a, useTheme, web} from '#/alf'
+import {Button, ButtonIcon} from '#/components/Button'
+import {ArrowOutOfBoxModified_Stroke2_Corner2_Rounded as Share} from '#/components/icons/ArrowOutOfBox'
+import * as Layout from '#/components/Layout'
+import {InlineLinkText} from '#/components/Link'
 import {ListFooter, ListMaybePlaceholder} from '#/components/Lists'
+import {SearchError} from '#/components/SearchError'
+import {Text} from '#/components/Typography'
 
-const renderItem = ({item}: ListRenderItemInfo<PostView>) => {
+const renderItem = ({item}: ListRenderItemInfo<AppBskyFeedDefs.PostView>) => {
   return <Post post={item} />
 }
 
-const keyExtractor = (item: PostView, index: number) => {
+const keyExtractor = (item: AppBskyFeedDefs.PostView, index: number) => {
   return `${item.uri}-${index}`
 }
 
@@ -39,15 +45,23 @@ export default function HashtagScreen({
 }: NativeStackScreenProps<CommonNavigatorParams, 'Hashtag'>) {
   const {tag, author} = route.params
   const {_} = useLingui()
-  const pal = usePalette('default')
 
-  const fullTag = React.useMemo(() => {
-    return `#${decodeURIComponent(tag)}`
+  const decodedTag = React.useMemo(() => {
+    return decodeURIComponent(tag)
   }, [tag])
 
+  const isCashtag = decodedTag.startsWith('$')
+
+  const fullTag = React.useMemo(() => {
+    // Cashtags already include the $ prefix, hashtags need # added
+    return isCashtag ? decodedTag : `#${decodedTag}`
+  }, [decodedTag, isCashtag])
+
   const headerTitle = React.useMemo(() => {
-    return enforceLen(fullTag.toLowerCase(), 24, true, 'middle')
-  }, [fullTag])
+    // Keep cashtags uppercase, lowercase hashtags
+    const displayTag = isCashtag ? fullTag.toUpperCase() : fullTag.toLowerCase()
+    return enforceLen(displayTag, 24, true, 'middle')
+  }, [fullTag, isCashtag])
 
   const sanitizedAuthor = React.useMemo(() => {
     if (!author) return
@@ -65,7 +79,6 @@ export default function HashtagScreen({
 
   const [activeTab, setActiveTab] = React.useState(0)
   const setMinimalShellMode = useSetMinimalShellMode()
-  const setDrawerSwipeDisabled = useSetDrawerSwipeDisabled()
 
   useFocusEffect(
     React.useCallback(() => {
@@ -76,10 +89,9 @@ export default function HashtagScreen({
   const onPageSelected = React.useCallback(
     (index: number) => {
       setMinimalShellMode(false)
-      setDrawerSwipeDisabled(index > 0)
       setActiveTab(index)
     },
-    [setDrawerSwipeDisabled, setMinimalShellMode],
+    [setMinimalShellMode],
   )
 
   const sections = React.useMemo(() => {
@@ -110,45 +122,44 @@ export default function HashtagScreen({
   }, [_, fullTag, author, activeTab])
 
   return (
-    <>
-      <CenteredView sideBorders style={[pal.border, pal.view]}>
-        <ViewHeader
-          showOnDesktop
-          title={headerTitle}
-          subtitle={author ? _(msg`From @${sanitizedAuthor}`) : undefined}
-          canGoBack
-          renderButton={
-            isNative
-              ? () => (
-                  <Pressable
-                    accessibilityRole="button"
-                    onPress={onShare}
-                    hitSlop={HITSLOP_10}>
-                    <ArrowOutOfBox_Stroke2_Corner0_Rounded
-                      size="lg"
-                      onPress={onShare}
-                    />
-                  </Pressable>
-                )
-              : undefined
-          }
-        />
-      </CenteredView>
+    <Layout.Screen>
       <Pager
         onPageSelected={onPageSelected}
         renderTabBar={props => (
-          <CenteredView
-            sideBorders
-            style={[pal.border, pal.view, styles.tabBarContainer]}>
+          <Layout.Center style={[a.z_10, web([a.sticky, {top: 0}])]}>
+            <Layout.Header.Outer noBottomBorder>
+              <Layout.Header.BackButton />
+              <Layout.Header.Content>
+                <Layout.Header.TitleText>{headerTitle}</Layout.Header.TitleText>
+                {author && (
+                  <Layout.Header.SubtitleText>
+                    {_(msg`From @${sanitizedAuthor}`)}
+                  </Layout.Header.SubtitleText>
+                )}
+              </Layout.Header.Content>
+              <Layout.Header.Slot>
+                <Button
+                  label={_(msg`Share`)}
+                  size="small"
+                  variant="ghost"
+                  color="primary"
+                  shape="round"
+                  onPress={onShare}
+                  hitSlop={HITSLOP_10}
+                  style={[{right: -3}]}>
+                  <ButtonIcon icon={Share} size="md" />
+                </Button>
+              </Layout.Header.Slot>
+            </Layout.Header.Outer>
             <TabBar items={sections.map(section => section.title)} {...props} />
-          </CenteredView>
+          </Layout.Center>
         )}
         initialPage={0}>
         {sections.map((section, i) => (
           <View key={i}>{section.component}</View>
         ))}
       </Pager>
-    </>
+    </Layout.Screen>
   )
 }
 
@@ -166,11 +177,18 @@ function HashtagScreenTab({
   const {_} = useLingui()
   const initialNumToRender = useInitialNumToRender()
   const [isPTR, setIsPTR] = React.useState(false)
+  const t = useTheme()
+  const {hasSession} = useSession()
+  const trackPostView = usePostViewTracking('Hashtag')
+
+  const isCashtag = fullTag.startsWith('$')
 
   const queryParam = React.useMemo(() => {
-    if (!author) return fullTag
-    return `${fullTag} from:${sanitizeHandle(author)}`
-  }, [fullTag, author])
+    // Cashtags need # prefix for search: "#$BTC" or "#$BTC from:author"
+    const searchTag = isCashtag ? `#${fullTag}` : fullTag
+    if (!author) return searchTag
+    return `${searchTag} from:${author}`
+  }, [fullTag, author, isCashtag])
 
   const {
     data,
@@ -199,6 +217,49 @@ function HashtagScreenTab({
     fetchNextPage()
   }, [isFetchingNextPage, hasNextPage, error, fetchNextPage])
 
+  const closeAllActiveElements = useCloseAllActiveElements()
+  const {requestSwitchToAccount} = useLoggedOutViewControls()
+
+  const showSignIn = () => {
+    closeAllActiveElements()
+    requestSwitchToAccount({requestedAccount: 'none'})
+  }
+
+  const showCreateAccount = () => {
+    closeAllActiveElements()
+    requestSwitchToAccount({requestedAccount: 'new'})
+  }
+
+  if (!hasSession) {
+    return (
+      <SearchError
+        title={_(msg`Search is currently unavailable when logged out`)}>
+        <Text style={[a.text_md, a.text_center, a.leading_snug]}>
+          <Trans>
+            <InlineLinkText
+              label={_(msg`Sign in`)}
+              to={'#'}
+              onPress={showSignIn}>
+              Sign in
+            </InlineLinkText>
+            <Text style={t.atoms.text_contrast_medium}> or </Text>
+            <InlineLinkText
+              label={_(msg`Create an account`)}
+              to={'#'}
+              onPress={showCreateAccount}>
+              create an account
+            </InlineLinkText>
+            <Text> </Text>
+            <Text style={t.atoms.text_contrast_medium}>
+              to search for news, sports, politics, and everything else
+              happening on Bluesky.
+            </Text>
+          </Trans>
+        </Text>
+      </SearchError>
+    )
+  }
+
   return (
     <>
       {posts.length < 1 ? (
@@ -207,7 +268,7 @@ function HashtagScreenTab({
           isError={isError}
           onRetry={refetch}
           emptyType="results"
-          emptyMessage={_(msg`We couldn't find any results for that hashtag.`)}
+          emptyMessage={_(msg`We couldn't find any results for that tag.`)}
         />
       ) : (
         <List
@@ -218,6 +279,7 @@ function HashtagScreenTab({
           onRefresh={onRefresh}
           onEndReached={onEndReached}
           onEndReachedThreshold={4}
+          onItemSeen={trackPostView}
           // @ts-ignore web only -prf
           desktopFixedHeight
           ListFooterComponent={
@@ -234,12 +296,3 @@ function HashtagScreenTab({
     </>
   )
 }
-
-const styles = StyleSheet.create({
-  tabBarContainer: {
-    // @ts-ignore web only
-    position: isWeb ? 'sticky' : '',
-    top: 0,
-    zIndex: 1,
-  },
-})

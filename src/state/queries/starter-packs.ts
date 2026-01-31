@@ -1,33 +1,33 @@
 import {
-  AppBskyActorDefs,
   AppBskyFeedDefs,
   AppBskyGraphDefs,
-  AppBskyGraphGetStarterPack,
+  type AppBskyGraphGetStarterPack,
   AppBskyGraphStarterpack,
-  AppBskyRichtextFacet,
+  type AppBskyRichtextFacet,
   AtUri,
-  BskyAgent,
+  type BskyAgent,
   RichText,
 } from '@atproto/api'
-import {StarterPackView} from '@atproto/api/dist/client/types/app/bsky/graph/defs'
 import {
-  QueryClient,
+  type QueryClient,
   useMutation,
   useQuery,
   useQueryClient,
 } from '@tanstack/react-query'
+import chunk from 'lodash.chunk'
 
-import {until} from 'lib/async/until'
-import {createStarterPackList} from 'lib/generate-starterpack'
+import {until} from '#/lib/async/until'
+import {createStarterPackList} from '#/lib/generate-starterpack'
 import {
   createStarterPackUri,
   httpStarterPackUriToAtUri,
   parseStarterPackUri,
-} from 'lib/strings/starter-pack'
-import {invalidateActorStarterPacksQuery} from 'state/queries/actor-starter-packs'
-import {STALE} from 'state/queries/index'
-import {invalidateListMembersQuery} from 'state/queries/list-members'
-import {useAgent} from 'state/session'
+} from '#/lib/strings/starter-pack'
+import {invalidateActorStarterPacksQuery} from '#/state/queries/actor-starter-packs'
+import {STALE} from '#/state/queries/index'
+import {invalidateListMembersQuery} from '#/state/queries/list-members'
+import {useAgent} from '#/state/session'
+import * as bsky from '#/types/bsky'
 
 const RQKEY_ROOT = 'starter-pack'
 const RQKEY = ({
@@ -58,7 +58,7 @@ export function useStarterPackQuery({
 }) {
   const agent = useAgent()
 
-  return useQuery<StarterPackView>({
+  return useQuery<AppBskyGraphDefs.StarterPackView>({
     queryKey: RQKEY(uri ? {uri} : {did, rkey}),
     queryFn: async () => {
       if (!uri) {
@@ -92,7 +92,7 @@ export async function invalidateStarterPack({
 interface UseCreateStarterPackMutationParams {
   name: string
   description?: string
-  profiles: AppBskyActorDefs.ProfileViewBasic[]
+  profiles: bsky.profile.AnyProfileView[]
   feeds?: AppBskyFeedDefs.GeneratorView[]
 }
 
@@ -130,7 +130,7 @@ export function useCreateStarterPackMutation({
 
       return await agent.app.bsky.graph.starterpack.create(
         {
-          repo: agent.session?.did,
+          repo: agent.assertDid,
         },
         {
           name,
@@ -200,36 +200,40 @@ export function useEditStarterPackMutation({
           i.subject.did !== agent.session?.did &&
           !profiles.find(p => p.did === i.subject.did && p.did),
       )
-
       if (removedItems.length !== 0) {
-        await agent.com.atproto.repo.applyWrites({
-          repo: agent.session!.did,
-          writes: removedItems.map(i => ({
-            $type: 'com.atproto.repo.applyWrites#delete',
-            collection: 'app.bsky.graph.listitem',
-            rkey: new AtUri(i.uri).rkey,
-          })),
-        })
+        const chunks = chunk(removedItems, 50)
+        for (const chunk of chunks) {
+          await agent.com.atproto.repo.applyWrites({
+            repo: agent.session!.did,
+            writes: chunk.map(i => ({
+              $type: 'com.atproto.repo.applyWrites#delete',
+              collection: 'app.bsky.graph.listitem',
+              rkey: new AtUri(i.uri).rkey,
+            })),
+          })
+        }
       }
 
       const addedProfiles = profiles.filter(
         p => !currentListItems.find(i => i.subject.did === p.did),
       )
-
       if (addedProfiles.length > 0) {
-        await agent.com.atproto.repo.applyWrites({
-          repo: agent.session!.did,
-          writes: addedProfiles.map(p => ({
-            $type: 'com.atproto.repo.applyWrites#create',
-            collection: 'app.bsky.graph.listitem',
-            value: {
-              $type: 'app.bsky.graph.listitem',
-              subject: p.did,
-              list: currentStarterPack.list?.uri,
-              createdAt: new Date().toISOString(),
-            },
-          })),
-        })
+        const chunks = chunk(addedProfiles, 50)
+        for (const chunk of chunks) {
+          await agent.com.atproto.repo.applyWrites({
+            repo: agent.session!.did,
+            writes: chunk.map(p => ({
+              $type: 'com.atproto.repo.applyWrites#create',
+              collection: 'app.bsky.graph.listitem',
+              value: {
+                $type: 'app.bsky.graph.listitem',
+                subject: p.did,
+                list: currentStarterPack.list?.uri,
+                createdAt: new Date().toISOString(),
+              },
+            })),
+          })
+        }
       }
 
       const rkey = parseStarterPackUri(currentStarterPack.uri)!.rkey
@@ -289,7 +293,7 @@ export function useDeleteStarterPackMutation({
   return useMutation({
     mutationFn: async ({listUri, rkey}: {listUri?: string; rkey: string}) => {
       if (!agent.session) {
-        throw new Error(`Requires logged in user`)
+        throw new Error(`Requires signed in user`)
       }
 
       if (listUri) {
@@ -346,4 +350,53 @@ async function whenAppViewReady(
     fn,
     () => agent.app.bsky.graph.getStarterPack({starterPack: uri}),
   )
+}
+
+export async function precacheStarterPack(
+  queryClient: QueryClient,
+  starterPack:
+    | AppBskyGraphDefs.StarterPackViewBasic
+    | AppBskyGraphDefs.StarterPackView,
+) {
+  if (!AppBskyGraphStarterpack.isRecord(starterPack.record)) {
+    return
+  }
+
+  let starterPackView: AppBskyGraphDefs.StarterPackView | undefined
+  if (AppBskyGraphDefs.isStarterPackView(starterPack)) {
+    starterPackView = starterPack
+  } else if (
+    AppBskyGraphDefs.isStarterPackViewBasic(starterPack) &&
+    bsky.validate(starterPack.record, AppBskyGraphStarterpack.validateRecord)
+  ) {
+    let feeds: AppBskyFeedDefs.GeneratorView[] | undefined
+    if (starterPack.record.feeds) {
+      feeds = []
+      for (const feed of starterPack.record.feeds) {
+        // note: types are wrong? claims to be `FeedItem`, but we actually
+        // get un$typed `GeneratorView` objects here -sfn
+        if (bsky.validate(feed, AppBskyFeedDefs.validateGeneratorView)) {
+          feeds.push(feed)
+        }
+      }
+    }
+
+    const listView: AppBskyGraphDefs.ListViewBasic = {
+      uri: starterPack.record.list,
+      // This will be populated once the data from server is fetched
+      cid: '',
+      name: starterPack.record.name,
+      purpose: 'app.bsky.graph.defs#referencelist',
+    }
+    starterPackView = {
+      ...starterPack,
+      $type: 'app.bsky.graph.defs#starterPackView',
+      list: listView,
+      feeds,
+    }
+  }
+
+  if (starterPackView) {
+    queryClient.setQueryData(RQKEY({uri: starterPack.uri}), starterPackView)
+  }
 }

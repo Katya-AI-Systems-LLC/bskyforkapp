@@ -1,7 +1,7 @@
 import {
-  AppBskyFeedDefs,
-  AppBskyGraphDefs,
-  AppBskyNotificationListNotifications,
+  type AppBskyFeedDefs,
+  type AppBskyGraphDefs,
+  type AppBskyNotificationListNotifications,
 } from '@atproto/api'
 
 export type NotificationType =
@@ -22,6 +22,7 @@ export interface FeedPage {
   cursor: string | undefined
   seenAt: Date
   items: FeedNotification[]
+  priority: boolean
 }
 
 export interface CachedFeedPage {
@@ -43,6 +44,12 @@ type OtherNotificationType =
   | 'quote'
   | 'follow'
   | 'feedgen-like'
+  | 'verified'
+  | 'unverified'
+  | 'like-via-repost'
+  | 'repost-via-repost'
+  | 'subscribed-post'
+  | 'contact-match'
   | 'unknown'
 
 type FeedNotificationBase = {

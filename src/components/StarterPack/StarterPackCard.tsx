@@ -1,18 +1,30 @@
 import React from 'react'
 import {View} from 'react-native'
+import {Image} from 'expo-image'
 import {AppBskyGraphStarterpack, AtUri} from '@atproto/api'
-import {StarterPackViewBasic} from '@atproto/api/dist/client/types/app/bsky/graph/defs'
-import {msg, Trans} from '@lingui/macro'
+import {msg, Plural, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
+import {useQueryClient} from '@tanstack/react-query'
 
-import {sanitizeHandle} from 'lib/strings/handles'
-import {useSession} from 'state/session'
+import {sanitizeHandle} from '#/lib/strings/handles'
+import {getStarterPackOgCard} from '#/lib/strings/starter-pack'
+import {precacheResolvedUri} from '#/state/queries/resolve-uri'
+import {precacheStarterPack} from '#/state/queries/starter-packs'
+import {useSession} from '#/state/session'
 import {atoms as a, useTheme} from '#/alf'
-import {StarterPack} from '#/components/icons/StarterPack'
-import {Link as InternalLink, LinkProps} from '#/components/Link'
+import {StarterPack as StarterPackIcon} from '#/components/icons/StarterPack'
+import {
+  Link as BaseLink,
+  type LinkProps as BaseLinkProps,
+} from '#/components/Link'
 import {Text} from '#/components/Typography'
+import * as bsky from '#/types/bsky'
 
-export function Default({starterPack}: {starterPack?: StarterPackViewBasic}) {
+export function Default({
+  starterPack,
+}: {
+  starterPack?: bsky.starterPack.AnyStarterPackView
+}) {
   if (!starterPack) return null
   return (
     <Link starterPack={starterPack}>
@@ -24,7 +36,7 @@ export function Default({starterPack}: {starterPack?: StarterPackViewBasic}) {
 export function Notification({
   starterPack,
 }: {
-  starterPack?: StarterPackViewBasic
+  starterPack?: bsky.starterPack.AnyStarterPackView
 }) {
   if (!starterPack) return null
   return (
@@ -39,7 +51,7 @@ export function Card({
   noIcon,
   noDescription,
 }: {
-  starterPack: StarterPackViewBasic
+  starterPack: bsky.starterPack.AnyStarterPackView
   noIcon?: boolean
   noDescription?: boolean
 }) {
@@ -49,49 +61,88 @@ export function Card({
   const t = useTheme()
   const {currentAccount} = useSession()
 
-  if (!AppBskyGraphStarterpack.isRecord(record)) {
+  if (
+    !bsky.dangerousIsType<AppBskyGraphStarterpack.Record>(
+      record,
+      AppBskyGraphStarterpack.isRecord,
+    )
+  ) {
     return null
   }
 
   return (
-    <View style={[a.flex_1, a.gap_md]}>
-      <View style={[a.flex_row, a.gap_sm]}>
-        {!noIcon ? <StarterPack width={40} gradient="sky" /> : null}
-        <View>
-          <Text style={[a.text_md, a.font_bold, a.leading_snug]}>
+    <View style={[a.w_full, a.gap_md]}>
+      <View style={[a.flex_row, a.gap_sm, a.w_full]}>
+        {!noIcon ? <StarterPackIcon width={40} gradient="sky" /> : null}
+        <View style={[a.flex_1]}>
+          <Text
+            emoji
+            style={[a.text_md, a.font_semi_bold, a.leading_snug]}
+            numberOfLines={2}>
             {record.name}
           </Text>
-          <Text style={[a.leading_snug, t.atoms.text_contrast_medium]}>
-            <Trans>
-              Starter pack by{' '}
-              {creator?.did === currentAccount?.did
-                ? _(msg`you`)
-                : `@${sanitizeHandle(creator.handle)}`}
-            </Trans>
+          <Text
+            emoji
+            style={[a.leading_snug, t.atoms.text_contrast_medium]}
+            numberOfLines={1}>
+            {creator?.did === currentAccount?.did
+              ? _(msg`Starter pack by you`)
+              : _(msg`Starter pack by ${sanitizeHandle(creator.handle, '@')}`)}
           </Text>
         </View>
       </View>
       {!noDescription && record.description ? (
-        <Text numberOfLines={3} style={[a.leading_snug]}>
+        <Text emoji numberOfLines={3} style={[a.leading_snug]}>
           {record.description}
         </Text>
       ) : null}
       {!!joinedAllTimeCount && joinedAllTimeCount >= 50 && (
-        <Text style={[a.font_bold, t.atoms.text_contrast_medium]}>
-          {joinedAllTimeCount} users have joined!
+        <Text style={[a.font_semi_bold, t.atoms.text_contrast_medium]}>
+          <Trans comment="Number of users (always at least 50) who have joined Bluesky using a specific starter pack">
+            <Plural value={joinedAllTimeCount} other="# users have" /> joined!
+          </Trans>
         </Text>
       )}
     </View>
   )
 }
 
+export function useStarterPackLink({
+  view,
+}: {
+  view: bsky.starterPack.AnyStarterPackView
+}) {
+  const {_} = useLingui()
+  const qc = useQueryClient()
+  const {rkey, handleOrDid} = React.useMemo(() => {
+    const rkey = new AtUri(view.uri).rkey
+    const {creator} = view
+    return {rkey, handleOrDid: creator.handle || creator.did}
+  }, [view])
+  const precache = () => {
+    precacheResolvedUri(qc, view.creator.handle, view.creator.did)
+    precacheStarterPack(qc, view)
+  }
+
+  return {
+    to: `/starter-pack/${handleOrDid}/${rkey}`,
+    label: AppBskyGraphStarterpack.isRecord(view.record)
+      ? _(msg`Navigate to ${view.record.name}`)
+      : _(msg`Navigate to starter pack`),
+    precache,
+  }
+}
+
 export function Link({
   starterPack,
   children,
-  ...rest
 }: {
-  starterPack: StarterPackViewBasic
-} & Omit<LinkProps, 'to'>) {
+  starterPack: bsky.starterPack.AnyStarterPackView
+  onPress?: () => void
+  children: BaseLinkProps['children']
+}) {
+  const {_} = useLingui()
+  const queryClient = useQueryClient()
   const {record} = starterPack
   const {rkey, handleOrDid} = React.useMemo(() => {
     const rkey = new AtUri(starterPack.uri).rkey
@@ -104,14 +155,49 @@ export function Link({
   }
 
   return (
-    <InternalLink
-      label={record.name}
-      {...rest}
-      to={{
-        screen: 'StarterPack',
-        params: {name: handleOrDid, rkey},
-      }}>
+    <BaseLink
+      to={`/starter-pack/${handleOrDid}/${rkey}`}
+      label={_(msg`Navigate to ${record.name}`)}
+      onPress={() => {
+        precacheResolvedUri(
+          queryClient,
+          starterPack.creator.handle,
+          starterPack.creator.did,
+        )
+        precacheStarterPack(queryClient, starterPack)
+      }}
+      style={[a.flex_col, a.align_start]}>
       {children}
-    </InternalLink>
+    </BaseLink>
+  )
+}
+
+export function Embed({
+  starterPack,
+}: {
+  starterPack: bsky.starterPack.AnyStarterPackView
+}) {
+  const t = useTheme()
+  const imageUri = getStarterPackOgCard(starterPack)
+
+  return (
+    <View
+      style={[
+        a.border,
+        a.rounded_sm,
+        a.overflow_hidden,
+        t.atoms.border_contrast_low,
+      ]}>
+      <Link starterPack={starterPack}>
+        <Image
+          source={imageUri}
+          style={[a.w_full, a.aspect_card]}
+          accessibilityIgnoresInvertColors={true}
+        />
+        <View style={[a.px_sm, a.py_md]}>
+          <Card starterPack={starterPack} />
+        </View>
+      </Link>
+    </View>
   )
 }

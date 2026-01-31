@@ -10,28 +10,25 @@ import {LinearGradient} from 'expo-linear-gradient'
 import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
+import {DM_SERVICE_HEADERS} from '#/lib/constants'
+import {usePalette} from '#/lib/hooks/usePalette'
+import {useWebMediaQueries} from '#/lib/hooks/useWebMediaQueries'
+import {cleanError} from '#/lib/strings/errors'
+import {colors, gradients, s} from '#/lib/styles'
+import {useTheme} from '#/lib/ThemeContext'
 import {useModalControls} from '#/state/modals'
-import {DM_SERVICE_HEADERS} from '#/state/queries/messages/const'
 import {useAgent, useSession, useSessionApi} from '#/state/session'
-import {usePalette} from 'lib/hooks/usePalette'
-import {useWebMediaQueries} from 'lib/hooks/useWebMediaQueries'
-import {cleanError} from 'lib/strings/errors'
-import {colors, gradients, s} from 'lib/styles'
-import {useTheme} from 'lib/ThemeContext'
-import {isAndroid, isWeb} from 'platform/detection'
-import {DeactivateAccountDialog} from '#/screens/Settings/components/DeactivateAccountDialog'
 import {atoms as a, useTheme as useNewTheme} from '#/alf'
-import {useDialogControl} from '#/components/Dialog'
 import {CircleInfo_Stroke2_Corner0_Rounded as CircleInfo} from '#/components/icons/CircleInfo'
-import {InlineLinkText} from '#/components/Link'
 import {Text as NewText} from '#/components/Typography'
+import {IS_ANDROID, IS_WEB} from '#/env'
 import {resetToTab} from '../../../Navigation'
 import {ErrorMessage} from '../util/error/ErrorMessage'
 import {Text} from '../util/text/Text'
 import * as Toast from '../util/Toast'
 import {ScrollView, TextInput} from './util'
 
-export const snapPoints = isAndroid ? ['90%'] : ['55%']
+export const snapPoints = IS_ANDROID ? ['90%'] : ['55%']
 
 export function Component({}: {}) {
   const pal = usePalette('default')
@@ -48,7 +45,6 @@ export function Component({}: {}) {
   const [password, setPassword] = React.useState<string>('')
   const [isProcessing, setIsProcessing] = React.useState<boolean>(false)
   const [error, setError] = React.useState<string>('')
-  const deactivateAccountControl = useDialogControl()
   const onPressSendEmail = async () => {
     setError('')
     setIsProcessing(true)
@@ -177,7 +173,7 @@ export function Component({}: {}) {
               </>
             )}
 
-            <View style={[!isWeb && a.px_xl]}>
+            <View style={[!IS_WEB && a.px_xl]}>
               <View
                 style={[
                   a.w_full,
@@ -202,24 +198,10 @@ export function Component({}: {}) {
                   <Trans>
                     You can also temporarily deactivate your account instead,
                     and reactivate it at any time.
-                  </Trans>{' '}
-                  <InlineLinkText
-                    label={_(
-                      msg`Click here for more information on deactivating your account`,
-                    )}
-                    to="#"
-                    onPress={e => {
-                      e.preventDefault()
-                      deactivateAccountControl.open()
-                      return false
-                    }}>
-                    <Trans>Click here for more information.</Trans>
-                  </InlineLinkText>
+                  </Trans>
                 </NewText>
               </View>
             </View>
-
-            <DeactivateAccountDialog control={deactivateAccountControl} />
           </>
         ) : (
           <>

@@ -1,22 +1,22 @@
 import React from 'react'
-import {AppBskyActorDefs} from '@atproto/api'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
-import {LogEvents} from '#/lib/statsig/statsig'
 import {logger} from '#/logger'
-import {Shadow} from '#/state/cache/types'
+import {type Shadow} from '#/state/cache/types'
 import {useProfileFollowMutationQueue} from '#/state/queries/profile'
 import {useRequireAuth} from '#/state/session'
 import * as Toast from '#/view/com/util/Toast'
+import {type Metrics} from '#/analytics/metrics'
+import type * as bsky from '#/types/bsky'
 
 export function useFollowMethods({
   profile,
   logContext,
 }: {
-  profile: Shadow<AppBskyActorDefs.ProfileViewBasic>
-  logContext: LogEvents['profile:follow']['logContext'] &
-    LogEvents['profile:unfollow']['logContext']
+  profile: Shadow<bsky.profile.AnyProfileView>
+  logContext: Metrics['profile:follow']['logContext'] &
+    Metrics['profile:unfollow']['logContext']
 }) {
   const {_} = useLingui()
   const requireAuth = useRequireAuth()
@@ -32,7 +32,7 @@ export function useFollowMethods({
       } catch (e: any) {
         logger.error(`useFollowMethods: failed to follow`, {message: String(e)})
         if (e?.name !== 'AbortError') {
-          Toast.show(_(msg`An issue occurred, please try again.`))
+          Toast.show(_(msg`An issue occurred, please try again.`), 'xmark')
         }
       }
     })
@@ -47,7 +47,7 @@ export function useFollowMethods({
           message: String(e),
         })
         if (e?.name !== 'AbortError') {
-          Toast.show(_(msg`An issue occurred, please try again.`))
+          Toast.show(_(msg`An issue occurred, please try again.`), 'xmark')
         }
       }
     })

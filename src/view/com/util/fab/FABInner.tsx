@@ -1,73 +1,78 @@
-import React, {ComponentProps} from 'react'
-import {StyleSheet, TouchableWithoutFeedback} from 'react-native'
-import Animated, {useAnimatedStyle, withTiming} from 'react-native-reanimated'
+import {type ComponentProps, type JSX} from 'react'
+import {
+  type Pressable,
+  type StyleProp,
+  StyleSheet,
+  type ViewStyle,
+} from 'react-native'
+import Animated from 'react-native-reanimated'
 import {useSafeAreaInsets} from 'react-native-safe-area-context'
-import {LinearGradient} from 'expo-linear-gradient'
 
+import {PressableScale} from '#/lib/custom-animations/PressableScale'
+import {useHaptics} from '#/lib/haptics'
 import {useMinimalShellFabTransform} from '#/lib/hooks/useMinimalShellTransform'
-import {useWebMediaQueries} from '#/lib/hooks/useWebMediaQueries'
 import {clamp} from '#/lib/numbers'
-import {gradients} from '#/lib/styles'
-import {isWeb} from '#/platform/detection'
-import {useInteractionState} from '#/components/hooks/useInteractionState'
+import {atoms as a, ios, useBreakpoints, useTheme} from '#/alf'
+import {IS_WEB} from '#/env'
 
-export interface FABProps
-  extends ComponentProps<typeof TouchableWithoutFeedback> {
+export interface FABProps extends ComponentProps<typeof Pressable> {
   testID?: string
   icon: JSX.Element
+  style?: StyleProp<ViewStyle>
 }
 
-export function FABInner({testID, icon, ...props}: FABProps) {
+export function FABInner({testID, icon, onPress, style, ...props}: FABProps) {
   const insets = useSafeAreaInsets()
-  const {isMobile, isTablet} = useWebMediaQueries()
+  const {gtMobile} = useBreakpoints()
+  const t = useTheme()
+  const playHaptic = useHaptics()
   const fabMinimalShellTransform = useMinimalShellFabTransform()
-  const {
-    state: pressed,
-    onIn: onPressIn,
-    onOut: onPressOut,
-  } = useInteractionState()
 
-  const size = isTablet ? styles.sizeLarge : styles.sizeRegular
+  const size = gtMobile ? styles.sizeLarge : styles.sizeRegular
 
-  const tabletSpacing = isTablet
+  const tabletSpacing = gtMobile
     ? {right: 50, bottom: 50}
     : {right: 24, bottom: clamp(insets.bottom, 15, 60) + 15}
 
-  const scale = useAnimatedStyle(() => ({
-    transform: [{scale: withTiming(pressed ? 0.95 : 1)}],
-  }))
-
   return (
-    <TouchableWithoutFeedback
-      testID={testID}
-      onPressIn={onPressIn}
-      onPressOut={onPressOut}
-      {...props}>
-      <Animated.View
+    <Animated.View
+      style={[
+        styles.outer,
+        size,
+        tabletSpacing,
+        !gtMobile && fabMinimalShellTransform,
+      ]}>
+      <PressableScale
+        testID={testID}
+        onPressIn={ios(() => playHaptic('Light'))}
+        onPress={evt => {
+          onPress?.(evt)
+          playHaptic('Light')
+        }}
+        onLongPress={ios((evt: any) => {
+          onPress?.(evt)
+          playHaptic('Heavy')
+        })}
+        targetScale={0.9}
         style={[
-          styles.outer,
+          a.rounded_full,
           size,
-          tabletSpacing,
-          isMobile && fabMinimalShellTransform,
-        ]}>
-        <Animated.View style={scale}>
-          <LinearGradient
-            colors={[gradients.blueLight.start, gradients.blueLight.end]}
-            start={{x: 0, y: 0}}
-            end={{x: 1, y: 1}}
-            style={[styles.inner, size]}>
-            {icon}
-          </LinearGradient>
-        </Animated.View>
-      </Animated.View>
-    </TouchableWithoutFeedback>
+          {backgroundColor: t.palette.primary_500},
+          a.align_center,
+          a.justify_center,
+          style,
+        ]}
+        {...props}>
+        {icon}
+      </PressableScale>
+    </Animated.View>
   )
 }
 
 const styles = StyleSheet.create({
   sizeRegular: {
-    width: 60,
-    height: 60,
+    width: 56,
+    height: 56,
     borderRadius: 30,
   },
   sizeLarge: {
@@ -77,11 +82,8 @@ const styles = StyleSheet.create({
   },
   outer: {
     // @ts-ignore web-only
-    position: isWeb ? 'fixed' : 'absolute',
+    position: IS_WEB ? 'fixed' : 'absolute',
     zIndex: 1,
-  },
-  inner: {
-    justifyContent: 'center',
-    alignItems: 'center',
+    cursor: 'pointer',
   },
 })

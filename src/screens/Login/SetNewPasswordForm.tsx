@@ -1,14 +1,12 @@
-import React, {useEffect, useState} from 'react'
+import {useState} from 'react'
 import {ActivityIndicator, View} from 'react-native'
-import {BskyAgent} from '@atproto/api'
 import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
-import {useAnalytics} from '#/lib/analytics/analytics'
-import {isNetworkError} from '#/lib/strings/errors'
-import {cleanError} from '#/lib/strings/errors'
+import {cleanError, isNetworkError} from '#/lib/strings/errors'
 import {checkAndFormatResetCode} from '#/lib/strings/password'
 import {logger} from '#/logger'
+import {Agent} from '#/state/session/agent'
 import {atoms as a, useTheme} from '#/alf'
 import {Button, ButtonText} from '#/components/Button'
 import {FormError} from '#/components/forms/FormError'
@@ -16,6 +14,7 @@ import * as TextField from '#/components/forms/TextField'
 import {Lock_Stroke2_Corner0_Rounded as Lock} from '#/components/icons/Lock'
 import {Ticket_Stroke2_Corner0_Rounded as Ticket} from '#/components/icons/Ticket'
 import {Text} from '#/components/Typography'
+import {useAnalytics} from '#/analytics'
 import {FormContainer} from './FormContainer'
 
 export const SetNewPasswordForm = ({
@@ -31,13 +30,9 @@ export const SetNewPasswordForm = ({
   onPressBack: () => void
   onPasswordSet: () => void
 }) => {
-  const {screen} = useAnalytics()
   const {_} = useLingui()
   const t = useTheme()
-
-  useEffect(() => {
-    screen('Signin:SetNewPasswordForm')
-  }, [screen])
+  const ax = useAnalytics()
 
   const [isProcessing, setIsProcessing] = useState<boolean>(false)
   const [resetCode, setResetCode] = useState<string>('')
@@ -47,13 +42,20 @@ export const SetNewPasswordForm = ({
     // Check that the code is correct. We do this again just incase the user enters the code after their pw and we
     // don't get to call onBlur first
     const formattedCode = checkAndFormatResetCode(resetCode)
-    // TODO Better password strength check
-    if (!formattedCode || !password) {
+
+    if (!formattedCode) {
       setError(
         _(
           msg`You have entered an invalid code. It should look like XXXXX-XXXXX.`,
         ),
       )
+      ax.metric('signin:passwordResetFailure', {})
+      return
+    }
+
+    // TODO Better password strength check
+    if (!password) {
+      setError(_(msg`Please enter a password.`))
       return
     }
 
@@ -61,15 +63,17 @@ export const SetNewPasswordForm = ({
     setIsProcessing(true)
 
     try {
-      const agent = new BskyAgent({service: serviceUrl})
+      const agent = new Agent(null, {service: serviceUrl})
       await agent.com.atproto.server.resetPassword({
         token: formattedCode,
         password,
       })
       onPasswordSet()
+      ax.metric('signin:passwordResetSuccess', {})
     } catch (e: any) {
       const errMsg = e.toString()
       logger.warn('Failed to set new password', {error: e})
+      ax.metric('signin:passwordResetFailure', {})
       setIsProcessing(false)
       if (isNetworkError(e)) {
         setError(
@@ -108,7 +112,9 @@ export const SetNewPasswordForm = ({
       </Text>
 
       <View>
-        <TextField.LabelText>Reset code</TextField.LabelText>
+        <TextField.LabelText>
+          <Trans>Reset code</Trans>
+        </TextField.LabelText>
         <TextField.Root>
           <TextField.Icon icon={Ticket} />
           <TextField.Input
@@ -131,7 +137,9 @@ export const SetNewPasswordForm = ({
       </View>
 
       <View>
-        <TextField.LabelText>New password</TextField.LabelText>
+        <TextField.LabelText>
+          <Trans>New password</Trans>
+        </TextField.LabelText>
         <TextField.Root>
           <TextField.Icon icon={Lock} />
           <TextField.Input
@@ -139,10 +147,10 @@ export const SetNewPasswordForm = ({
             label={_(msg`Enter a password`)}
             autoCapitalize="none"
             autoCorrect={false}
-            autoComplete="password"
             returnKeyType="done"
             secureTextEntry={true}
-            textContentType="password"
+            autoComplete="new-password"
+            passwordRules="minlength: 8;"
             clearButtonMode="while-editing"
             value={password}
             onChangeText={setPassword}
@@ -160,7 +168,7 @@ export const SetNewPasswordForm = ({
           label={_(msg`Back`)}
           variant="solid"
           color="secondary"
-          size="medium"
+          size="large"
           onPress={onPressBack}>
           <ButtonText>
             <Trans>Back</Trans>
@@ -174,7 +182,7 @@ export const SetNewPasswordForm = ({
             label={_(msg`Next`)}
             variant="solid"
             color="primary"
-            size="medium"
+            size="large"
             onPress={onPressNext}>
             <ButtonText>
               <Trans>Next</Trans>

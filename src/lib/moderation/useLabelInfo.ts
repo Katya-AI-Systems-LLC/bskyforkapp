@@ -1,15 +1,15 @@
 import {
-  ComAtprotoLabelDefs,
-  AppBskyLabelerDefs,
-  LABELS,
+  type AppBskyLabelerDefs,
+  type ComAtprotoLabelDefs,
+  type InterpretedLabelValueDefinition,
   interpretLabelValueDefinition,
-  InterpretedLabelValueDefinition,
+  LABELS,
 } from '@atproto/api'
 import {useLingui} from '@lingui/react'
 import * as bcp47Match from 'bcp-47-match'
 
 import {
-  GlobalLabelStrings,
+  type GlobalLabelStrings,
   useGlobalLabelStrings,
 } from '#/lib/moderation/useGlobalLabelStrings'
 import {useLabelDefinitions} from '#/state/preferences'

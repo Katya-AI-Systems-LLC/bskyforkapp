@@ -49,10 +49,11 @@ export function FeedShutdownMsg({feedUri}: {feedUri: string}) {
     } catch (err: any) {
       Toast.show(
         _(
-          msg`There was an an issue updating your feeds, please check your internet connection and try again.`,
+          msg`There was an issue updating your feeds, please check your internet connection and try again.`,
         ),
+        'exclamation-circle',
       )
-      logger.error('Failed up update feeds', {message: err})
+      logger.error('Failed to update feeds', {message: err})
     }
   }, [removeFeed, feedConfig, _, hasDiscoverPinned, setSelectedFeed])
 
@@ -67,10 +68,11 @@ export function FeedShutdownMsg({feedUri}: {feedUri: string}) {
     } catch (err: any) {
       Toast.show(
         _(
-          msg`There was an an issue updating your feeds, please check your internet connection and try again.`,
+          msg`There was an issue updating your feeds, please check your internet connection and try again.`,
         ),
+        'exclamation-circle',
       )
-      logger.error('Failed up update feeds', {message: err})
+      logger.error('Failed to update feeds', {message: err})
     }
   }, [
     replaceFeedWithDiscover,
@@ -90,13 +92,14 @@ export function FeedShutdownMsg({feedUri}: {feedUri: string}) {
         t.atoms.border_contrast_low,
         a.border_t,
       ]}>
-      <Text style={[a.text_5xl, a.font_bold, t.atoms.text, a.text_center]}>
+      <Text style={[a.text_5xl, a.font_semi_bold, t.atoms.text, a.text_center]}>
         :(
       </Text>
       <Text style={[a.text_md, a.leading_snug, t.atoms.text, a.text_center]}>
         <Trans>
           This feed is no longer online. We are showing{' '}
           <InlineLinkText
+            label={_(msg`The Discover feed`)}
             to="/profile/bsky.app/feed/whats-hot"
             style={[a.text_md]}>
             Discover

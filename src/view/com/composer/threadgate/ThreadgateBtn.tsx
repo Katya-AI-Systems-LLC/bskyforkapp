@@ -1,74 +1,191 @@
-import React from 'react'
-import {Keyboard, StyleProp, ViewStyle} from 'react-native'
-import Animated, {AnimatedStyle} from 'react-native-reanimated'
-import {msg} from '@lingui/macro'
+import {useEffect, useMemo, useState} from 'react'
+import {Keyboard, type StyleProp, type ViewStyle} from 'react-native'
+import {type AnimatedStyle} from 'react-native-reanimated'
+import {type AppBskyFeedPostgate} from '@atproto/api'
+import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
+import deepEqual from 'fast-deep-equal'
 
-import {isNative} from '#/platform/detection'
-import {ThreadgateSetting} from '#/state/queries/threadgate'
-import {useAnalytics} from 'lib/analytics/analytics'
-import {atoms as a, useTheme} from '#/alf'
+import {isNetworkError} from '#/lib/strings/errors'
+import {logger} from '#/logger'
+import {usePostInteractionSettingsMutation} from '#/state/queries/post-interaction-settings'
+import {createPostgateRecord} from '#/state/queries/postgate/util'
+import {usePreferencesQuery} from '#/state/queries/preferences'
+import {
+  type ThreadgateAllowUISetting,
+  threadgateAllowUISettingToAllowRecordValue,
+  threadgateRecordToAllowUISetting,
+} from '#/state/queries/threadgate'
 import {Button, ButtonIcon, ButtonText} from '#/components/Button'
 import * as Dialog from '#/components/Dialog'
-import {ThreadgateEditorDialog} from '#/components/dialogs/ThreadgateEditor'
-import {CircleBanSign_Stroke2_Corner0_Rounded as CircleBanSign} from '#/components/icons/CircleBanSign'
-import {Earth_Stroke2_Corner0_Rounded as Earth} from '#/components/icons/Globe'
-import {Group3_Stroke2_Corner0_Rounded as Group} from '#/components/icons/Group'
+import {PostInteractionSettingsControlledDialog} from '#/components/dialogs/PostInteractionSettingsDialog'
+import {TinyChevronBottom_Stroke2_Corner0_Rounded as TinyChevronIcon} from '#/components/icons/Chevron'
+import {Earth_Stroke2_Corner0_Rounded as EarthIcon} from '#/components/icons/Globe'
+import {Group3_Stroke2_Corner0_Rounded as GroupIcon} from '#/components/icons/Group'
+import * as Tooltip from '#/components/Tooltip'
+import {Text} from '#/components/Typography'
+import {useAnalytics} from '#/analytics'
+import {IS_NATIVE} from '#/env'
+import {useThreadgateNudged} from '#/storage/hooks/threadgate-nudged'
 
 export function ThreadgateBtn({
-  threadgate,
-  onChange,
-  style,
+  postgate,
+  onChangePostgate,
+  threadgateAllowUISettings,
+  onChangeThreadgateAllowUISettings,
 }: {
-  threadgate: ThreadgateSetting[]
-  onChange: (v: ThreadgateSetting[]) => void
+  postgate: AppBskyFeedPostgate.Record
+  onChangePostgate: (v: AppBskyFeedPostgate.Record) => void
+
+  threadgateAllowUISettings: ThreadgateAllowUISetting[]
+  onChangeThreadgateAllowUISettings: (v: ThreadgateAllowUISetting[]) => void
+
   style?: StyleProp<AnimatedStyle<ViewStyle>>
 }) {
-  const {track} = useAnalytics()
   const {_} = useLingui()
-  const t = useTheme()
+  const ax = useAnalytics()
   const control = Dialog.useDialogControl()
+  const [threadgateNudged, setThreadgateNudged] = useThreadgateNudged()
+  const [showTooltip, setShowTooltip] = useState(false)
+  const [tooltipWasShown] = useState(!threadgateNudged)
+
+  useEffect(() => {
+    if (!threadgateNudged) {
+      const timeout = setTimeout(() => {
+        setShowTooltip(true)
+      }, 1000)
+      return () => clearTimeout(timeout)
+    }
+  }, [threadgateNudged])
+
+  const onDismissTooltip = (visible: boolean) => {
+    if (visible) return
+    setThreadgateNudged(true)
+    setShowTooltip(false)
+  }
+
+  const {data: preferences} = usePreferencesQuery()
+  const [persist, setPersist] = useState(false)
 
   const onPress = () => {
-    track('Composer:ThreadgateOpened')
-    if (isNative && Keyboard.isVisible()) {
+    ax.metric('composer:threadgate:open', {
+      nudged: tooltipWasShown,
+    })
+
+    if (IS_NATIVE && Keyboard.isVisible()) {
       Keyboard.dismiss()
     }
+
+    setShowTooltip(false)
+    setThreadgateNudged(true)
 
     control.open()
   }
 
-  const isEverybody = threadgate.length === 0
-  const isNobody = !!threadgate.find(gate => gate.type === 'nobody')
-  const label = isEverybody
-    ? _(msg`Everybody can reply`)
-    : isNobody
-    ? _(msg`Nobody can reply`)
-    : _(msg`Some people can reply`)
+  const prefThreadgateAllowUISettings = threadgateRecordToAllowUISetting({
+    $type: 'app.bsky.feed.threadgate',
+    post: '',
+    createdAt: new Date().toISOString(),
+    allow: preferences?.postInteractionSettings.threadgateAllowRules,
+  })
+  const prefPostgate = createPostgateRecord({
+    post: '',
+    embeddingRules:
+      preferences?.postInteractionSettings?.postgateEmbeddingRules || [],
+  })
+
+  const isDirty = useMemo(() => {
+    const everybody = [{type: 'everybody'}]
+    return (
+      !deepEqual(
+        threadgateAllowUISettings,
+        prefThreadgateAllowUISettings ?? everybody,
+      ) ||
+      !deepEqual(postgate.embeddingRules, prefPostgate?.embeddingRules ?? [])
+    )
+  }, [
+    prefThreadgateAllowUISettings,
+    prefPostgate,
+    threadgateAllowUISettings,
+    postgate,
+  ])
+
+  const {mutate: persistChanges, isPending: isSaving} =
+    usePostInteractionSettingsMutation({
+      onError: err => {
+        if (!isNetworkError(err)) {
+          logger.error('Failed to persist threadgate settings', {
+            safeMessage: err,
+          })
+        }
+      },
+      onSettled: () => {
+        control.close(() => {
+          setPersist(false)
+        })
+      },
+    })
+
+  const anyoneCanReply =
+    threadgateAllowUISettings.length === 1 &&
+    threadgateAllowUISettings[0].type === 'everybody'
+  const anyoneCanQuote =
+    !postgate.embeddingRules || postgate.embeddingRules.length === 0
+  const anyoneCanInteract = anyoneCanReply && anyoneCanQuote
+  const label = anyoneCanInteract
+    ? _(msg`Anyone can interact`)
+    : _(msg`Interaction limited`)
 
   return (
     <>
-      <Animated.View style={[a.flex_row, a.p_sm, t.atoms.bg, style]}>
-        <Button
-          variant="solid"
-          color="secondary"
-          size="xsmall"
-          testID="openReplyGateButton"
-          onPress={onPress}
-          label={label}
-          accessibilityHint={_(
-            msg`Opens a dialog to choose who can reply to this thread`,
-          )}>
-          <ButtonIcon
-            icon={isEverybody ? Earth : isNobody ? CircleBanSign : Group}
-          />
-          <ButtonText>{label}</ButtonText>
-        </Button>
-      </Animated.View>
-      <ThreadgateEditorDialog
+      <Tooltip.Outer
+        visible={showTooltip}
+        onVisibleChange={onDismissTooltip}
+        position="top">
+        <Tooltip.Target>
+          <Button
+            color={showTooltip ? 'primary_subtle' : 'secondary'}
+            size="small"
+            testID="openReplyGateButton"
+            onPress={onPress}
+            label={label}
+            accessibilityHint={_(
+              msg`Opens a dialog to choose who can interact with this post`,
+            )}>
+            <ButtonIcon icon={anyoneCanInteract ? EarthIcon : GroupIcon} />
+            <ButtonText numberOfLines={1}>{label}</ButtonText>
+            <ButtonIcon icon={TinyChevronIcon} size="2xs" />
+          </Button>
+        </Tooltip.Target>
+        <Tooltip.TextBubble>
+          <Text>
+            <Trans>Psst! You can edit who can interact with this post.</Trans>
+          </Text>
+        </Tooltip.TextBubble>
+      </Tooltip.Outer>
+
+      <PostInteractionSettingsControlledDialog
         control={control}
-        threadgate={threadgate}
-        onChange={onChange}
+        onSave={() => {
+          if (persist) {
+            persistChanges({
+              threadgateAllowRules: threadgateAllowUISettingToAllowRecordValue(
+                threadgateAllowUISettings,
+              ),
+              postgateEmbeddingRules: postgate.embeddingRules ?? [],
+            })
+          } else {
+            control.close()
+          }
+        }}
+        isSaving={isSaving}
+        postgate={postgate}
+        onChangePostgate={onChangePostgate}
+        threadgateAllowUISettings={threadgateAllowUISettings}
+        onChangeThreadgateAllowUISettings={onChangeThreadgateAllowUISettings}
+        isDirty={isDirty}
+        persist={persist}
+        onChangePersist={setPersist}
       />
     </>
   )

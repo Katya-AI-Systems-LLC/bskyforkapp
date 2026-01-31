@@ -34,6 +34,7 @@ class ViewController: UIViewController, WKScriptMessageHandler, WKNavigationDele
     webView.navigationDelegate = self
     self.view.addSubview(webView)
     self.webView = webView
+    self.webView?.load(URLRequest(url: URL(string: "https://bsky.app/?splash=true&clip=true")!))
   }
 
   func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
@@ -45,13 +46,11 @@ class ViewController: UIViewController, WKScriptMessageHandler, WKNavigationDele
 
     switch payload.action {
     case .present:
-      guard let url = self.starterPackUrl else {
-        return
-      }
-
       self.presentAppStoreOverlay()
-      defaults?.setValue(url.absoluteString, forKey: "starterPackUri")
 
+      if let url = self.starterPackUrl {
+        defaults?.setValue(url.absoluteString, forKey: "starterPackUri")
+      }
     case .store:
       guard let keyToStoreAs = payload.keyToStoreAs, let jsonToStore = payload.jsonToStore else {
         return
@@ -71,18 +70,46 @@ class ViewController: UIViewController, WKScriptMessageHandler, WKNavigationDele
     prevUrl = url
     // pathComponents starts with "/" as the first component, then each path name. so...
     // ["/", "start", "name", "rkey"]
-    if url.pathComponents.count == 4,
-       url.pathComponents[1] == "start" {
+    if isStarterPackUrl(url) {
       self.starterPackUrl = url
     }
 
     return .allow
   }
 
+  func isStarterPackUrl(_ url: URL) -> Bool {
+    var host: String?
+    if #available(iOS 16.0, *) {
+      host = url.host()
+    } else {
+      host = url.host
+    }
+
+    switch host {
+    case "bsky.app":
+      if url.pathComponents.count == 4,
+         url.pathComponents[1] == "start" || url.pathComponents[1] == "starter-pack" {
+        return true
+      }
+      return false
+    case "go.bsky.app":
+      if url.pathComponents.count == 2 {
+        return true
+      }
+      return false
+    default:
+      return false
+    }
+  }
+
   func handleURL(url: URL) {
-    let urlString = "\(url.absoluteString)?clip=true"
-    if let url = URL(string: urlString) {
-      self.webView?.load(URLRequest(url: url))
+    if isStarterPackUrl(url) {
+      let urlString = "\(url.absoluteString)?clip=true"
+      if let url = URL(string: urlString) {
+        self.webView?.load(URLRequest(url: url))
+      }
+    } else {
+      self.webView?.load(URLRequest(url: URL(string: "https://bsky.app/?splash=true&clip=true")!))
     }
   }
 

@@ -3,12 +3,13 @@ import {View} from 'react-native'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
-import {FeedDescriptor} from '#/state/queries/post-feed'
-import {isNative} from 'platform/detection'
-import {Feed} from 'view/com/posts/Feed'
-import {EmptyState} from 'view/com/util/EmptyState'
-import {ListRef} from 'view/com/util/List'
-import {SectionRef} from '#/screens/Profile/Sections/types'
+import {type FeedDescriptor} from '#/state/queries/post-feed'
+import {PostFeed} from '#/view/com/posts/PostFeed'
+import {EmptyState} from '#/view/com/util/EmptyState'
+import {type ListRef} from '#/view/com/util/List'
+import {type SectionRef} from '#/screens/Profile/Sections/types'
+import {HashtagWide_Stroke1_Corner0_Rounded as HashtagWideIcon} from '#/components/icons/Hashtag'
+import {IS_NATIVE} from '#/env'
 
 interface ProfilesListProps {
   listUri: string
@@ -18,12 +19,12 @@ interface ProfilesListProps {
 
 export const PostsList = React.forwardRef<SectionRef, ProfilesListProps>(
   function PostsListImpl({listUri, headerHeight, scrollElRef}, ref) {
-    const feed: FeedDescriptor = `list|${listUri}|as_following`
+    const feed: FeedDescriptor = `list|${listUri}`
     const {_} = useLingui()
 
     const onScrollToTop = useCallback(() => {
       scrollElRef.current?.scrollToOffset({
-        animated: isNative,
+        animated: IS_NATIVE,
         offset: -headerHeight,
       })
     }, [scrollElRef, headerHeight])
@@ -33,12 +34,18 @@ export const PostsList = React.forwardRef<SectionRef, ProfilesListProps>(
     }))
 
     const renderPostsEmpty = useCallback(() => {
-      return <EmptyState icon="hashtag" message={_(msg`This feed is empty.`)} />
+      return (
+        <EmptyState
+          icon={HashtagWideIcon}
+          iconSize="2xl"
+          message={_(msg`This feed is empty.`)}
+        />
+      )
     }, [_])
 
     return (
       <View>
-        <Feed
+        <PostFeed
           feed={feed}
           pollInterval={60e3}
           scrollElRef={scrollElRef}

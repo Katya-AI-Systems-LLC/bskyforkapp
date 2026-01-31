@@ -1,18 +1,21 @@
 import {
-  AppBskyActorDefs,
-  AppBskyGraphGetStarterPack,
-  BskyAgent,
-  Facet,
+  type $Typed,
+  type AppBskyActorDefs,
+  type AppBskyGraphGetStarterPack,
+  type BskyAgent,
+  type ComAtprotoRepoApplyWrites,
+  type Facet,
 } from '@atproto/api'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 import {useMutation} from '@tanstack/react-query'
 
-import {until} from 'lib/async/until'
-import {sanitizeDisplayName} from 'lib/strings/display-names'
-import {sanitizeHandle} from 'lib/strings/handles'
-import {enforceLen} from 'lib/strings/helpers'
-import {useAgent} from 'state/session'
+import {until} from '#/lib/async/until'
+import {sanitizeDisplayName} from '#/lib/strings/display-names'
+import {sanitizeHandle} from '#/lib/strings/handles'
+import {enforceLen} from '#/lib/strings/helpers'
+import {useAgent} from '#/state/session'
+import type * as bsky from '#/types/bsky'
 
 export const createStarterPackList = async ({
   name,
@@ -24,7 +27,7 @@ export const createStarterPackList = async ({
   name: string
   description?: string
   descriptionFacets?: Facet[]
-  profiles: AppBskyActorDefs.ProfileViewBasic[]
+  profiles: bsky.profile.AnyProfileView[]
   agent: BskyAgent
 }): Promise<{uri: string; cid: string}> => {
   if (profiles.length === 0) throw new Error('No profiles given')
@@ -43,14 +46,7 @@ export const createStarterPackList = async ({
   if (!list) throw new Error('List creation failed')
   await agent.com.atproto.repo.applyWrites({
     repo: agent.session!.did,
-    writes: [
-      createListItem({did: agent.session!.did, listUri: list.uri}),
-    ].concat(
-      profiles
-        // Ensure we don't have ourselves in this list twice
-        .filter(p => p.did !== agent.session!.did)
-        .map(p => createListItem({did: p.did, listUri: list.uri})),
-    ),
+    writes: profiles.map(p => createListItem({did: p.did, listUri: list.uri})),
   })
 
   return list
@@ -65,12 +61,11 @@ export function useGenerateStarterPackMutation({
 }) {
   const {_} = useLingui()
   const agent = useAgent()
-  const starterPackString = _(msg`Starter Pack`)
 
   return useMutation<{uri: string; cid: string}, Error, void>({
     mutationFn: async () => {
-      let profile: AppBskyActorDefs.ProfileViewBasic | undefined
-      let profiles: AppBskyActorDefs.ProfileViewBasic[] | undefined
+      let profile: AppBskyActorDefs.ProfileViewDetailed | undefined
+      let profiles: AppBskyActorDefs.ProfileView[] | undefined
 
       await Promise.all([
         (async () => {
@@ -106,7 +101,7 @@ export function useGenerateStarterPackMutation({
         25,
         true,
       )
-      const starterPackName = `${displayName}'s ${starterPackString}`
+      const starterPackName = _(msg`${displayName}'s Starter Pack`)
 
       const list = await createStarterPackList({
         name: starterPackName,
@@ -137,7 +132,13 @@ export function useGenerateStarterPackMutation({
   })
 }
 
-function createListItem({did, listUri}: {did: string; listUri: string}) {
+function createListItem({
+  did,
+  listUri,
+}: {
+  did: string
+  listUri: string
+}): $Typed<ComAtprotoRepoApplyWrites.Create> {
   return {
     $type: 'com.atproto.repo.applyWrites#create',
     collection: 'app.bsky.graph.listitem',

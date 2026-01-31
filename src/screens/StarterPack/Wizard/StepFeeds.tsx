@@ -1,23 +1,23 @@
-import React, {useState} from 'react'
-import {ListRenderItemInfo, View} from 'react-native'
+import {useState} from 'react'
+import {type ListRenderItemInfo, View} from 'react-native'
 import {KeyboardAwareScrollView} from 'react-native-keyboard-controller'
-import {AppBskyFeedDefs, ModerationOpts} from '@atproto/api'
+import {type AppBskyFeedDefs, type ModerationOpts} from '@atproto/api'
 import {Trans} from '@lingui/macro'
 
+import {DISCOVER_FEED_URI} from '#/lib/constants'
 import {useA11y} from '#/state/a11y'
-import {DISCOVER_FEED_URI} from 'lib/constants'
 import {
   useGetPopularFeedsQuery,
+  usePopularFeedsSearch,
   useSavedFeeds,
-  useSearchPopularFeedsQuery,
-} from 'state/queries/feed'
-import {SearchInput} from 'view/com/util/forms/SearchInput'
-import {List} from 'view/com/util/List'
+} from '#/state/queries/feed'
+import {List} from '#/view/com/util/List'
 import {useWizardState} from '#/screens/StarterPack/Wizard/State'
 import {atoms as a, useTheme} from '#/alf'
+import {SearchInput} from '#/components/forms/SearchInput'
 import {useThrottledValue} from '#/components/hooks/useThrottledValue'
 import {Loader} from '#/components/Loader'
-import {ScreenTransition} from '#/components/StarterPack/Wizard/ScreenTransition'
+import {ScreenTransition} from '#/components/ScreenTransition'
 import {WizardFeedCard} from '#/components/StarterPack/Wizard/WizardListCard'
 import {Text} from '#/components/Typography'
 
@@ -59,7 +59,7 @@ export function StepFeeds({moderationOpts}: {moderationOpts: ModerationOpts}) {
       : undefined
 
   const {data: searchedFeeds, isFetching: isFetchingSearchedFeeds} =
-    useSearchPopularFeedsQuery({q: throttledQuery})
+    usePopularFeedsSearch({query: throttledQuery})
 
   const isLoading =
     !isFetchedSavedFeeds || isLoadingPopularFeeds || isFetchingSearchedFeeds
@@ -79,14 +79,16 @@ export function StepFeeds({moderationOpts}: {moderationOpts: ModerationOpts}) {
   }
 
   return (
-    <ScreenTransition style={[a.flex_1]} direction={state.transitionDirection}>
+    <ScreenTransition
+      style={[a.flex_1]}
+      direction={state.transitionDirection}
+      enabledWeb>
       <View style={[a.border_b, t.atoms.border_contrast_medium]}>
-        <View style={[a.my_sm, a.px_md, {height: 40}]}>
+        <View style={[a.py_sm, a.px_md, {height: 60}]}>
           <SearchInput
-            query={query}
-            onChangeQuery={t => setQuery(t)}
-            onPressCancelSearch={() => setQuery('')}
-            onSubmitQuery={() => {}}
+            value={query}
+            onChangeText={t => setQuery(t)}
+            onClearText={() => setQuery('')}
           />
         </View>
       </View>
@@ -94,14 +96,14 @@ export function StepFeeds({moderationOpts}: {moderationOpts: ModerationOpts}) {
         data={query ? searchedFeeds : suggestedFeeds}
         renderItem={renderItem}
         keyExtractor={keyExtractor}
-        contentContainerStyle={{paddingTop: 6}}
         onEndReached={
           !query && !screenReaderEnabled ? () => fetchNextPage() : undefined
         }
         onEndReachedThreshold={2}
+        keyboardDismissMode="on-drag"
         renderScrollComponent={props => <KeyboardAwareScrollView {...props} />}
         keyboardShouldPersistTaps="handled"
-        containWeb={true}
+        disableFullWindowScroll={true}
         sideBorders={false}
         style={{flex: 1}}
         ListEmptyComponent={
@@ -111,7 +113,7 @@ export function StepFeeds({moderationOpts}: {moderationOpts: ModerationOpts}) {
             ) : (
               <Text
                 style={[
-                  a.font_bold,
+                  a.font_semi_bold,
                   a.text_lg,
                   a.text_center,
                   a.mt_lg,

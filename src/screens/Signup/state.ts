@@ -2,7 +2,7 @@ import React, {useCallback} from 'react'
 import {LayoutAnimation} from 'react-native'
 import {
   ComAtprotoServerCreateAccount,
-  ComAtprotoServerDescribeServer,
+  type ComAtprotoServerDescribeServer,
 } from '@atproto/api'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
@@ -10,11 +10,11 @@ import * as EmailValidator from 'email-validator'
 
 import {DEFAULT_SERVICE} from '#/lib/constants'
 import {cleanError} from '#/lib/strings/errors'
-import {createFullHandle, validateHandle} from '#/lib/strings/handles'
+import {createFullHandle} from '#/lib/strings/handles'
 import {getAge} from '#/lib/strings/time'
-import {logger} from '#/logger'
 import {useSessionApi} from '#/state/session'
 import {useOnboardingDispatch} from '#/state/shell'
+import {type AnalyticsContextType, useAnalytics} from '#/analytics'
 
 export type ServiceDescription = ComAtprotoServerDescribeServer.OutputSchema
 
@@ -26,10 +26,24 @@ export enum SignupStep {
   CAPTCHA,
 }
 
+type SubmitTask = {
+  verificationCode: string | undefined
+  mutableProcessed: boolean // OK to mutate assuming it's never read in render.
+}
+
+type ErrorField =
+  | 'invite-code'
+  | 'email'
+  | 'handle'
+  | 'password'
+  | 'date-of-birth'
+
 export type SignupState = {
+  analytics?: AnalyticsContextType
+
   hasPrev: boolean
-  canNext: boolean
   activeStep: SignupStep
+  screenTransitionDirection: 'Forward' | 'Backward'
 
   serviceUrl: string
   serviceDescription?: ServiceDescription
@@ -41,10 +55,19 @@ export type SignupState = {
   handle: string
 
   error: string
+  errorField?: ErrorField
   isLoading: boolean
+
+  pendingSubmit: null | SubmitTask
+
+  // Tracking
+  signupStartTime: number
+  fieldErrors: Record<ErrorField, number>
+  backgroundCount: number
 }
 
 export type SignupAction =
+  | {type: 'setAnalytics'; value: AnalyticsContextType}
   | {type: 'prev'}
   | {type: 'next'}
   | {type: 'finish'}
@@ -56,15 +79,18 @@ export type SignupAction =
   | {type: 'setDateOfBirth'; value: Date}
   | {type: 'setInviteCode'; value: string}
   | {type: 'setHandle'; value: string}
-  | {type: 'setVerificationCode'; value: string}
-  | {type: 'setError'; value: string}
-  | {type: 'setCanNext'; value: boolean}
+  | {type: 'setError'; value: string; field?: ErrorField}
+  | {type: 'clearError'}
   | {type: 'setIsLoading'; value: boolean}
+  | {type: 'submit'; task: SubmitTask}
+  | {type: 'incrementBackgroundCount'}
 
 export const initialState: SignupState = {
+  analytics: undefined,
+
   hasPrev: false,
-  canNext: false,
   activeStep: SignupStep.INFO,
+  screenTransitionDirection: 'Forward',
 
   serviceUrl: DEFAULT_SERVICE,
   serviceDescription: undefined,
@@ -76,7 +102,21 @@ export const initialState: SignupState = {
   inviteCode: '',
 
   error: '',
+  errorField: undefined,
   isLoading: false,
+
+  pendingSubmit: null,
+
+  // Tracking
+  signupStartTime: Date.now(),
+  fieldErrors: {
+    'invite-code': 0,
+    email: 0,
+    handle: 0,
+    password: 0,
+    'date-of-birth': 0,
+  },
+  backgroundCount: 0,
 }
 
 export function is13(date: Date) {
@@ -91,19 +131,25 @@ export function reducer(s: SignupState, a: SignupAction): SignupState {
   let next = {...s}
 
   switch (a.type) {
+    case 'setAnalytics': {
+      next.analytics = a.value
+      break
+    }
     case 'prev': {
       if (s.activeStep !== SignupStep.INFO) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+        next.screenTransitionDirection = 'Backward'
         next.activeStep--
         next.error = ''
+        next.errorField = undefined
       }
       break
     }
     case 'next': {
       if (s.activeStep !== SignupStep.CAPTCHA) {
-        LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
+        next.screenTransitionDirection = 'Forward'
         next.activeStep++
         next.error = ''
+        next.errorField = undefined
       }
       break
     }
@@ -144,43 +190,57 @@ export function reducer(s: SignupState, a: SignupAction): SignupState {
       next.handle = a.value
       break
     }
-    case 'setCanNext': {
-      next.canNext = a.value
-      break
-    }
     case 'setIsLoading': {
       next.isLoading = a.value
       break
     }
     case 'setError': {
       next.error = a.value
+      next.errorField = a.field
+
+      // Track field errors
+      if (a.field) {
+        next.fieldErrors[a.field] = (next.fieldErrors[a.field] || 0) + 1
+
+        // Log the field error
+        s.analytics?.metric('signup:fieldError', {
+          field: a.field,
+          errorCount: next.fieldErrors[a.field],
+          errorMessage: a.value,
+          activeStep: next.activeStep,
+        })
+      }
+      break
+    }
+    case 'clearError': {
+      next.error = ''
+      next.errorField = undefined
+      break
+    }
+    case 'submit': {
+      next.pendingSubmit = a.task
+      break
+    }
+    case 'incrementBackgroundCount': {
+      next.backgroundCount = s.backgroundCount + 1
+
+      // Log background/foreground event during signup
+      s.analytics?.metric('signup:backgrounded', {
+        activeStep: next.activeStep,
+        backgroundCount: next.backgroundCount,
+      })
       break
     }
   }
 
   next.hasPrev = next.activeStep !== SignupStep.INFO
 
-  switch (next.activeStep) {
-    case SignupStep.INFO: {
-      const isValidEmail = EmailValidator.validate(next.email)
-      next.canNext =
-        !!(next.email && next.password && next.dateOfBirth) &&
-        (!next.serviceDescription?.inviteCodeRequired || !!next.inviteCode) &&
-        is13(next.dateOfBirth) &&
-        isValidEmail
-      break
-    }
-    case SignupStep.HANDLE: {
-      next.canNext =
-        !!next.handle && validateHandle(next.handle, next.userDomain).overall
-      break
-    }
-  }
-
-  logger.debug('signup', next)
+  s.analytics?.logger.debug('signup', next)
 
   if (s.activeStep !== next.activeStep) {
-    logger.debug('signup: step changed', {activeStep: next.activeStep})
+    s.analytics?.logger.debug('signup: step changed', {
+      activeStep: next.activeStep,
+    })
   }
 
   return next
@@ -191,26 +251,23 @@ interface IContext {
   dispatch: React.Dispatch<SignupAction>
 }
 export const SignupContext = React.createContext<IContext>({} as IContext)
+SignupContext.displayName = 'SignupContext'
 export const useSignupContext = () => React.useContext(SignupContext)
 
-export function useSubmitSignup({
-  state,
-  dispatch,
-}: {
-  state: SignupState
-  dispatch: (action: SignupAction) => void
-}) {
+export function useSubmitSignup() {
+  const ax = useAnalytics()
   const {_} = useLingui()
   const {createAccount} = useSessionApi()
   const onboardingDispatch = useOnboardingDispatch()
 
   return useCallback(
-    async (verificationCode?: string) => {
+    async (state: SignupState, dispatch: (action: SignupAction) => void) => {
       if (!state.email) {
         dispatch({type: 'setStep', value: SignupStep.INFO})
         return dispatch({
           type: 'setError',
           value: _(msg`Please enter your email.`),
+          field: 'email',
         })
       }
       if (!EmailValidator.validate(state.email)) {
@@ -218,6 +275,7 @@ export function useSubmitSignup({
         return dispatch({
           type: 'setError',
           value: _(msg`Your email appears to be invalid.`),
+          field: 'email',
         })
       }
       if (!state.password) {
@@ -225,6 +283,7 @@ export function useSubmitSignup({
         return dispatch({
           type: 'setError',
           value: _(msg`Please choose your password.`),
+          field: 'password',
         })
       }
       if (!state.handle) {
@@ -232,14 +291,15 @@ export function useSubmitSignup({
         return dispatch({
           type: 'setError',
           value: _(msg`Please choose your handle.`),
+          field: 'handle',
         })
       }
       if (
         state.serviceDescription?.phoneVerificationRequired &&
-        !verificationCode
+        !state.pendingSubmit?.verificationCode
       ) {
         dispatch({type: 'setStep', value: SignupStep.CAPTCHA})
-        logger.error('Signup Flow Error', {
+        ax.logger.error('Signup Flow Error', {
           errorMessage: 'Verification captcha code was not set.',
           registrationHandle: state.handle,
         })
@@ -252,15 +312,26 @@ export function useSubmitSignup({
       dispatch({type: 'setIsLoading', value: true})
 
       try {
-        await createAccount({
-          service: state.serviceUrl,
-          email: state.email,
-          handle: createFullHandle(state.handle, state.userDomain),
-          password: state.password,
-          birthDate: state.dateOfBirth,
-          inviteCode: state.inviteCode.trim(),
-          verificationCode: verificationCode,
-        })
+        await createAccount(
+          {
+            service: state.serviceUrl,
+            email: state.email,
+            handle: createFullHandle(state.handle, state.userDomain),
+            password: state.password,
+            birthDate: state.dateOfBirth,
+            inviteCode: state.inviteCode.trim(),
+            verificationCode: state.pendingSubmit?.verificationCode,
+          },
+          {
+            signupDuration: Date.now() - state.signupStartTime,
+            fieldErrorsTotal: Object.values(state.fieldErrors).reduce(
+              (a, b) => a + b,
+              0,
+            ),
+            backgroundCount: state.backgroundCount,
+          },
+        )
+
         /*
          * Must happen last so that if the user has multiple tabs open and
          * createAccount fails, one tab is not stuck in onboarding — Eric
@@ -274,6 +345,7 @@ export function useSubmitSignup({
             value: _(
               msg`Invite code not accepted. Check that you input it correctly and try again.`,
             ),
+            field: 'invite-code',
           })
           dispatch({type: 'setStep', value: SignupStep.INFO})
           return
@@ -283,10 +355,14 @@ export function useSubmitSignup({
         const isHandleError = error.toLowerCase().includes('handle')
 
         dispatch({type: 'setIsLoading', value: false})
-        dispatch({type: 'setError', value: error})
+        dispatch({
+          type: 'setError',
+          value: error,
+          field: isHandleError ? 'handle' : undefined,
+        })
         dispatch({type: 'setStep', value: isHandleError ? 2 : 1})
 
-        logger.error('Signup Flow Error', {
+        ax.logger.error('Signup Flow Error', {
           errorMessage: error,
           registrationHandle: state.handle,
         })
@@ -294,19 +370,6 @@ export function useSubmitSignup({
         dispatch({type: 'setIsLoading', value: false})
       }
     },
-    [
-      state.email,
-      state.password,
-      state.handle,
-      state.serviceDescription?.phoneVerificationRequired,
-      state.serviceUrl,
-      state.userDomain,
-      state.inviteCode,
-      state.dateOfBirth,
-      dispatch,
-      _,
-      onboardingDispatch,
-      createAccount,
-    ],
+    [_, onboardingDispatch, createAccount],
   )
 }

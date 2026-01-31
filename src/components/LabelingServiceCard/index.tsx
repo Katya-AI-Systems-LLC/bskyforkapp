@@ -1,15 +1,16 @@
-import React from 'react'
 import {View} from 'react-native'
-import {AppBskyLabelerDefs} from '@atproto/api'
+import {type AppBskyLabelerDefs} from '@atproto/api'
 import {msg, Plural, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
+import type React from 'react'
 
 import {getLabelingServiceTitle} from '#/lib/moderation'
 import {sanitizeHandle} from '#/lib/strings/handles'
 import {useLabelerInfoQuery} from '#/state/queries/labeler'
 import {UserAvatar} from '#/view/com/util/UserAvatar'
-import {atoms as a, useTheme, ViewStyleProp} from '#/alf'
-import {Link as InternalLink, LinkProps} from '#/components/Link'
+import {atoms as a, useTheme, type ViewStyleProp} from '#/alf'
+import {Flag_Stroke2_Corner0_Rounded as Flag} from '#/components/icons/Flag'
+import {Link as InternalLink, type LinkProps} from '#/components/Link'
 import {RichText} from '#/components/RichText'
 import {Text} from '#/components/Typography'
 import {ChevronRight_Stroke2_Corner0_Rounded as ChevronRight} from '../icons/Chevron'
@@ -43,22 +44,46 @@ export function Avatar({avatar}: {avatar?: string}) {
 }
 
 export function Title({value}: {value: string}) {
-  return <Text style={[a.text_md, a.font_bold]}>{value}</Text>
-}
-
-export function Description({value, handle}: {value?: string; handle: string}) {
-  return value ? (
-    <Text numberOfLines={2}>
-      <RichText value={value} style={[]} />
-    </Text>
-  ) : (
-    <Text>
-      <Trans>By {sanitizeHandle(handle, '@')}</Trans>
+  return (
+    <Text emoji style={[a.text_md, a.font_semi_bold, a.leading_tight]}>
+      {value}
     </Text>
   )
 }
 
-export function LikeCount({count}: {count: number}) {
+export function Description({value, handle}: {value?: string; handle: string}) {
+  const {_} = useLingui()
+  return value ? (
+    <Text numberOfLines={2}>
+      <RichText value={value} />
+    </Text>
+  ) : (
+    <Text emoji style={[a.leading_snug]}>
+      {_(msg`By ${sanitizeHandle(handle, '@')}`)}
+    </Text>
+  )
+}
+
+export function RegionalNotice() {
+  const t = useTheme()
+  return (
+    <View
+      style={[
+        a.flex_row,
+        a.align_center,
+        a.gap_xs,
+        a.pt_2xs,
+        {marginLeft: -2},
+      ]}>
+      <Flag fill={t.atoms.text_contrast_low.color} size="sm" />
+      <Text style={[a.italic, a.leading_snug]}>
+        <Trans>Required in your region</Trans>
+      </Text>
+    </View>
+  )
+}
+
+export function LikeCount({likeCount}: {likeCount: number}) {
   const t = useTheme()
   return (
     <Text
@@ -66,9 +91,11 @@ export function LikeCount({count}: {count: number}) {
         a.mt_sm,
         a.text_sm,
         t.atoms.text_contrast_medium,
-        {fontWeight: '500'},
+        {fontWeight: '600'},
       ]}>
-      <Plural value={count} one="Liked by # user" other="Liked by # users" />
+      <Trans>
+        Liked by <Plural value={likeCount} one="# user" other="# users" />
+      </Trans>
     </Text>
   )
 }
@@ -85,7 +112,7 @@ export function Content({children}: React.PropsWithChildren<{}>) {
         a.align_center,
         a.justify_between,
       ]}>
-      <View style={[a.gap_xs, a.flex_1]}>{children}</View>
+      <View style={[a.gap_2xs, a.flex_1]}>{children}</View>
 
       <ChevronRight size="md" style={[a.z_10, t.atoms.text_contrast_low]} />
     </View>
@@ -113,7 +140,7 @@ export function Default({
           value={labeler.creator.description}
           handle={labeler.creator.handle}
         />
-        {labeler.likeCount ? <LikeCount count={labeler.likeCount} /> : null}
+        {labeler.likeCount ? <LikeCount likeCount={labeler.likeCount} /> : null}
       </Content>
     </Outer>
   )
@@ -130,7 +157,7 @@ export function Link({
       to={{
         screen: 'Profile',
         params: {
-          name: labeler.creator.handle,
+          name: labeler.creator.did,
         },
       }}
       label={_(

@@ -5,31 +5,30 @@ import {
   useWindowDimensions,
   View,
 } from 'react-native'
-import {AppBskyGraphDefs as GraphDefs} from '@atproto/api'
+import {type AppBskyGraphDefs as GraphDefs} from '@atproto/api'
 import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
+import {usePalette} from '#/lib/hooks/usePalette'
+import {sanitizeDisplayName} from '#/lib/strings/display-names'
 import {cleanError} from '#/lib/strings/errors'
+import {sanitizeHandle} from '#/lib/strings/handles'
+import {s} from '#/lib/styles'
 import {useModalControls} from '#/state/modals'
 import {
   getMembership,
-  ListMembersip,
+  type ListMembersip,
   useDangerousListMembershipsQuery,
   useListMembershipAddMutation,
   useListMembershipRemoveMutation,
 } from '#/state/queries/list-memberships'
 import {useSession} from '#/state/session'
-import {usePalette} from 'lib/hooks/usePalette'
-import {sanitizeDisplayName} from 'lib/strings/display-names'
-import {sanitizeHandle} from 'lib/strings/handles'
-import {s} from 'lib/styles'
-import {isAndroid, isMobileWeb, isWeb} from 'platform/detection'
+import {IS_ANDROID, IS_WEB, IS_WEB_MOBILE} from '#/env'
 import {MyLists} from '../lists/MyLists'
 import {Button} from '../util/forms/Button'
 import {Text} from '../util/text/Text'
 import * as Toast from '../util/Toast'
 import {UserAvatar} from '../util/UserAvatar'
-import hairlineWidth = StyleSheet.hairlineWidth
 
 export const snapPoints = ['fullscreen']
 
@@ -57,30 +56,36 @@ export function Component({
   }, [closeModal])
 
   const listStyle = React.useMemo(() => {
-    if (isMobileWeb) {
+    if (IS_WEB_MOBILE) {
       return [pal.border, {height: screenHeight / 2}]
-    } else if (isWeb) {
+    } else if (IS_WEB) {
       return [pal.border, {height: screenHeight / 1.5}]
     }
 
-    return [pal.border, {flex: 1, borderTopWidth: hairlineWidth}]
+    return [pal.border, {flex: 1, borderTopWidth: StyleSheet.hairlineWidth}]
   }, [pal.border, screenHeight])
+
+  const headerStyles = [
+    {
+      textAlign: 'center',
+      fontWeight: '600',
+      fontSize: 20,
+      marginBottom: 12,
+      paddingHorizontal: 12,
+    } as const,
+    pal.text,
+  ]
 
   return (
     <View testID="userAddRemoveListsModal" style={s.hContentRegion}>
-      <Text
-        style={[
-          {
-            textAlign: 'center',
-            fontWeight: 'bold',
-            fontSize: 20,
-            marginBottom: 12,
-            paddingHorizontal: 12,
-          },
-          pal.text,
-        ]}
-        numberOfLines={1}>
-        <Trans>Update {displayName} in Lists</Trans>
+      <Text style={headerStyles} numberOfLines={1}>
+        <Trans>
+          Update{' '}
+          <Text style={headerStyles} numberOfLines={1}>
+            {displayName}
+          </Text>{' '}
+          in Lists
+        </Trans>
       </Text>
       <MyLists
         filter="all"
@@ -166,7 +171,7 @@ function ListItem({
         onRemove?.(list.uri)
       }
     } catch (e) {
-      Toast.show(cleanError(e))
+      Toast.show(cleanError(e), 'xmark')
     } finally {
       setIsProcessing(false)
     }
@@ -188,7 +193,7 @@ function ListItem({
       style={[
         styles.listItem,
         pal.border,
-        index !== 0 && {borderTopWidth: hairlineWidth},
+        index !== 0 && {borderTopWidth: StyleSheet.hairlineWidth},
       ]}>
       <View style={styles.listItemAvi}>
         <UserAvatar size={40} avatar={list.avatar} type="list" />
@@ -238,7 +243,7 @@ function ListItem({
 
 const styles = StyleSheet.create({
   container: {
-    paddingHorizontal: isWeb ? 0 : 16,
+    paddingHorizontal: IS_WEB ? 0 : 16,
   },
   btns: {
     position: 'relative',
@@ -247,8 +252,8 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
     gap: 10,
     paddingTop: 10,
-    paddingBottom: isAndroid ? 10 : 0,
-    borderTopWidth: hairlineWidth,
+    paddingBottom: IS_ANDROID ? 10 : 0,
+    borderTopWidth: StyleSheet.hairlineWidth,
   },
   footerBtn: {
     paddingHorizontal: 24,

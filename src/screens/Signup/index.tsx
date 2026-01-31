@@ -1,19 +1,16 @@
-import React from 'react'
-import {View} from 'react-native'
+import {useEffect, useReducer, useState} from 'react'
+import {AppState, type AppStateStatus, View} from 'react-native'
+import ReactNativeDeviceAttest from 'react-native-device-attest'
 import Animated, {FadeIn, LayoutAnimationConfig} from 'react-native-reanimated'
 import {AppBskyGraphStarterpack} from '@atproto/api'
 import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
-import {useAnalytics} from '#/lib/analytics/analytics'
 import {FEEDBACK_FORM_URL} from '#/lib/constants'
-import {logEvent} from '#/lib/statsig/statsig'
-import {createFullHandle} from '#/lib/strings/handles'
 import {logger} from '#/logger'
 import {useServiceQuery} from '#/state/queries/service'
-import {useAgent} from '#/state/session'
-import {useStarterPackQuery} from 'state/queries/starter-packs'
-import {useActiveStarterPack} from 'state/shell/starter-pack'
+import {useStarterPackQuery} from '#/state/queries/starter-packs'
+import {useActiveStarterPack} from '#/state/shell/starter-pack'
 import {LoggedOutLayout} from '#/view/com/util/layouts/LoggedOutLayout'
 import {
   initialState,
@@ -25,22 +22,34 @@ import {
 import {StepCaptcha} from '#/screens/Signup/StepCaptcha'
 import {StepHandle} from '#/screens/Signup/StepHandle'
 import {StepInfo} from '#/screens/Signup/StepInfo'
-import {atoms as a, useBreakpoints, useTheme} from '#/alf'
+import {atoms as a, native, useBreakpoints, useTheme} from '#/alf'
 import {AppLanguageDropdown} from '#/components/AppLanguageDropdown'
-import {Button, ButtonText} from '#/components/Button'
 import {Divider} from '#/components/Divider'
 import {LinearGradientBackground} from '#/components/LinearGradientBackground'
 import {InlineLinkText} from '#/components/Link'
+import {ScreenTransition} from '#/components/ScreenTransition'
 import {Text} from '#/components/Typography'
+import {useAnalytics} from '#/analytics'
+import {GCP_PROJECT_ID, IS_ANDROID} from '#/env'
+import * as bsky from '#/types/bsky'
 
 export function Signup({onPressBack}: {onPressBack: () => void}) {
+  const ax = useAnalytics()
   const {_} = useLingui()
   const t = useTheme()
-  const {screen} = useAnalytics()
-  const [state, dispatch] = React.useReducer(reducer, initialState)
-  const submit = useSubmitSignup({state, dispatch})
+  const [state, dispatch] = useReducer(reducer, {
+    ...initialState,
+    analytics: ax,
+  })
   const {gtMobile} = useBreakpoints()
-  const agent = useAgent()
+  const submit = useSubmitSignup()
+
+  useEffect(() => {
+    dispatch({
+      type: 'setAnalytics',
+      value: ax,
+    })
+  }, [ax])
 
   const activeStarterPack = useActiveStarterPack()
   const {
@@ -51,7 +60,7 @@ export function Signup({onPressBack}: {onPressBack: () => void}) {
     uri: activeStarterPack?.uri,
   })
 
-  const [isFetchedAtMount] = React.useState(starterPack != null)
+  const [isFetchedAtMount] = useState(starterPack != null)
   const showStarterPackCard =
     activeStarterPack?.uri && !isFetchingStarterPack && starterPack
 
@@ -62,11 +71,7 @@ export function Signup({onPressBack}: {onPressBack: () => void}) {
     refetch,
   } = useServiceQuery(state.serviceUrl)
 
-  React.useEffect(() => {
-    screen('CreateAccount')
-  }, [screen])
-
-  React.useEffect(() => {
+  useEffect(() => {
     if (isFetching) {
       dispatch({type: 'setIsLoading', value: true})
     } else if (!isFetching) {
@@ -74,7 +79,7 @@ export function Signup({onPressBack}: {onPressBack: () => void}) {
     }
   }, [isFetching])
 
-  React.useEffect(() => {
+  useEffect(() => {
     if (isError) {
       dispatch({type: 'setServiceDescription', value: undefined})
       dispatch({
@@ -89,204 +94,155 @@ export function Signup({onPressBack}: {onPressBack: () => void}) {
     }
   }, [_, serviceInfo, isError])
 
-  const onNextPress = React.useCallback(async () => {
-    if (state.activeStep === SignupStep.HANDLE) {
-      try {
-        dispatch({type: 'setIsLoading', value: true})
-
-        const res = await agent.resolveHandle({
-          handle: createFullHandle(state.handle, state.userDomain),
-        })
-
-        if (res.data.did) {
-          dispatch({
-            type: 'setError',
-            value: _(msg`That handle is already taken.`),
-          })
-          return
-        }
-      } catch (e) {
-        // Don't have to handle
-      } finally {
-        dispatch({type: 'setIsLoading', value: false})
+  useEffect(() => {
+    if (state.pendingSubmit) {
+      if (!state.pendingSubmit.mutableProcessed) {
+        state.pendingSubmit.mutableProcessed = true
+        submit(state, dispatch)
       }
     }
+  }, [state, dispatch, submit])
 
-    // phoneVerificationRequired is actually whether a captcha is required
-    if (
-      state.activeStep === SignupStep.HANDLE &&
-      !state.serviceDescription?.phoneVerificationRequired
-    ) {
-      submit()
+  // Track app backgrounding during signup
+  useEffect(() => {
+    const subscription = AppState.addEventListener(
+      'change',
+      (nextAppState: AppStateStatus) => {
+        if (nextAppState === 'background') {
+          dispatch({type: 'incrementBackgroundCount'})
+        }
+      },
+    )
+
+    return () => subscription.remove()
+  }, [])
+
+  // On Android, warmup the Play Integrity API on the signup screen so it is ready by the time we get to the gate screen.
+  useEffect(() => {
+    if (!IS_ANDROID) {
       return
     }
-
-    dispatch({type: 'next'})
-    logEvent('signup:nextPressed', {
-      activeStep: state.activeStep,
-    })
-  }, [
-    _,
-    state.activeStep,
-    state.handle,
-    state.serviceDescription?.phoneVerificationRequired,
-    state.userDomain,
-    submit,
-    agent,
-  ])
-
-  const onBackPress = React.useCallback(() => {
-    if (state.activeStep !== SignupStep.INFO) {
-      if (state.activeStep === SignupStep.CAPTCHA) {
-        logger.error('Signup Flow Error', {
-          errorMessage:
-            'User went back from captcha step. Possibly encountered an error.',
-          registrationHandle: state.handle,
-        })
-      }
-
-      dispatch({type: 'prev'})
-    } else {
-      onPressBack()
-    }
-  }, [onPressBack, state.activeStep, state.handle])
+    ReactNativeDeviceAttest.warmupIntegrity(GCP_PROJECT_ID).catch(err =>
+      logger.error(err),
+    )
+  }, [])
 
   return (
-    <SignupContext.Provider value={{state, dispatch}}>
-      <LoggedOutLayout
-        leadin=""
-        title={_(msg`Create Account`)}
-        description={_(msg`We're so excited to have you join us!`)}
-        scrollable>
-        <View testID="createAccount" style={a.flex_1}>
-          {showStarterPackCard &&
-          AppBskyGraphStarterpack.isRecord(starterPack.record) ? (
-            <Animated.View entering={!isFetchedAtMount ? FadeIn : undefined}>
-              <LinearGradientBackground
-                style={[a.mx_lg, a.p_lg, a.gap_sm, a.rounded_sm]}>
-                <Text style={[a.font_bold, a.text_xl, {color: 'white'}]}>
-                  {starterPack.record.name}
-                </Text>
-                <Text style={[{color: 'white'}]}>
-                  {starterPack.feeds?.length ? (
-                    <Trans>
-                      You'll follow the suggested users and feeds once you
-                      finish creating your account!
-                    </Trans>
+    <Animated.View exiting={native(FadeIn.duration(90))} style={a.flex_1}>
+      <SignupContext.Provider value={{state, dispatch}}>
+        <LoggedOutLayout
+          leadin=""
+          title={_(msg`Create Account`)}
+          description={_(msg`We're so excited to have you join us!`)}
+          scrollable>
+          <View testID="createAccount" style={a.flex_1}>
+            {showStarterPackCard &&
+            bsky.dangerousIsType<AppBskyGraphStarterpack.Record>(
+              starterPack.record,
+              AppBskyGraphStarterpack.isRecord,
+            ) ? (
+              <Animated.View entering={!isFetchedAtMount ? FadeIn : undefined}>
+                <LinearGradientBackground
+                  style={[a.mx_lg, a.p_lg, a.gap_sm, a.rounded_sm]}>
+                  <Text style={[a.font_semi_bold, a.text_xl, {color: 'white'}]}>
+                    {starterPack.record.name}
+                  </Text>
+                  <Text style={[{color: 'white'}]}>
+                    {starterPack.feeds?.length ? (
+                      <Trans>
+                        You'll follow the suggested users and feeds once you
+                        finish creating your account!
+                      </Trans>
+                    ) : (
+                      <Trans>
+                        You'll follow the suggested users once you finish
+                        creating your account!
+                      </Trans>
+                    )}
+                  </Text>
+                </LinearGradientBackground>
+              </Animated.View>
+            ) : null}
+            <LayoutAnimationConfig skipEntering>
+              <ScreenTransition
+                key={state.activeStep}
+                direction={state.screenTransitionDirection}>
+                <View
+                  style={[
+                    a.flex_1,
+                    a.px_xl,
+                    a.pt_2xl,
+                    !gtMobile && {paddingBottom: 100},
+                  ]}>
+                  <View style={[a.gap_sm, a.pb_3xl]}>
+                    <Text
+                      style={[a.font_semi_bold, t.atoms.text_contrast_medium]}>
+                      <Trans>
+                        Step {state.activeStep + 1} of{' '}
+                        {state.serviceDescription &&
+                        !state.serviceDescription.phoneVerificationRequired
+                          ? '2'
+                          : '3'}
+                      </Trans>
+                    </Text>
+                    <Text style={[a.text_3xl, a.font_semi_bold]}>
+                      {state.activeStep === SignupStep.INFO ? (
+                        <Trans>Your account</Trans>
+                      ) : state.activeStep === SignupStep.HANDLE ? (
+                        <Trans>Choose your username</Trans>
+                      ) : (
+                        <Trans>Complete the challenge</Trans>
+                      )}
+                    </Text>
+                  </View>
+
+                  {state.activeStep === SignupStep.INFO ? (
+                    <StepInfo
+                      onPressBack={onPressBack}
+                      isLoadingStarterPack={
+                        isFetchingStarterPack && !isErrorStarterPack
+                      }
+                      isServerError={isError}
+                      refetchServer={refetch}
+                    />
+                  ) : state.activeStep === SignupStep.HANDLE ? (
+                    <StepHandle />
                   ) : (
-                    <Trans>
-                      You'll follow the suggested users once you finish creating
-                      your account!
-                    </Trans>
+                    <StepCaptcha />
                   )}
-                </Text>
-              </LinearGradientBackground>
-            </Animated.View>
-          ) : null}
-          <View
-            style={[
-              a.flex_1,
-              a.px_xl,
-              a.pt_2xl,
-              !gtMobile && {paddingBottom: 100},
-            ]}>
-            <View style={[a.gap_sm, a.pb_3xl]}>
-              <Text style={[a.font_semibold, t.atoms.text_contrast_medium]}>
-                <Trans>
-                  Step {state.activeStep + 1} of{' '}
-                  {state.serviceDescription &&
-                  !state.serviceDescription.phoneVerificationRequired
-                    ? '2'
-                    : '3'}
-                </Trans>
-              </Text>
-              <Text style={[a.text_3xl, a.font_bold]}>
-                {state.activeStep === SignupStep.INFO ? (
-                  <Trans>Your account</Trans>
-                ) : state.activeStep === SignupStep.HANDLE ? (
-                  <Trans>Your user handle</Trans>
-                ) : (
-                  <Trans>Complete the challenge</Trans>
-                )}
-              </Text>
-            </View>
 
-            <View style={[a.pb_3xl]}>
-              <LayoutAnimationConfig skipEntering skipExiting>
-                {state.activeStep === SignupStep.INFO ? (
-                  <StepInfo
-                    isLoadingStarterPack={
-                      isFetchingStarterPack && !isErrorStarterPack
-                    }
-                  />
-                ) : state.activeStep === SignupStep.HANDLE ? (
-                  <StepHandle />
-                ) : (
-                  <StepCaptcha />
-                )}
-              </LayoutAnimationConfig>
-            </View>
+                  <Divider />
 
-            <View style={[a.flex_row, a.justify_between, a.pb_lg]}>
-              <Button
-                label={_(msg`Go back to previous step`)}
-                variant="solid"
-                color="secondary"
-                size="medium"
-                onPress={onBackPress}>
-                <ButtonText>
-                  <Trans>Back</Trans>
-                </ButtonText>
-              </Button>
-              {state.activeStep !== SignupStep.CAPTCHA && (
-                <>
-                  {isError ? (
-                    <Button
-                      label={_(msg`Press to retry`)}
-                      variant="solid"
-                      color="primary"
-                      size="medium"
-                      disabled={state.isLoading}
-                      onPress={() => refetch()}>
-                      <ButtonText>
-                        <Trans>Retry</Trans>
-                      </ButtonText>
-                    </Button>
-                  ) : (
-                    <Button
-                      testID="nextBtn"
-                      label={_(msg`Continue to next step`)}
-                      variant="solid"
-                      color="primary"
-                      size="medium"
-                      disabled={!state.canNext || state.isLoading}
-                      onPress={onNextPress}>
-                      <ButtonText>
-                        <Trans>Next</Trans>
-                      </ButtonText>
-                    </Button>
-                  )}
-                </>
-              )}
-            </View>
-
-            <Divider />
-
-            <View
-              style={[a.w_full, a.py_lg, a.flex_row, a.gap_lg, a.align_center]}>
-              <AppLanguageDropdown />
-              <Text style={[t.atoms.text, !gtMobile && a.text_md]}>
-                <Trans>Having trouble?</Trans>{' '}
-                <InlineLinkText
-                  to={FEEDBACK_FORM_URL({email: state.email})}
-                  style={[!gtMobile && a.text_md]}>
-                  <Trans>Contact support</Trans>
-                </InlineLinkText>
-              </Text>
-            </View>
+                  <View
+                    style={[
+                      a.w_full,
+                      a.py_lg,
+                      a.flex_row,
+                      a.gap_md,
+                      a.align_center,
+                    ]}>
+                    <AppLanguageDropdown />
+                    <Text
+                      style={[
+                        a.flex_1,
+                        t.atoms.text_contrast_medium,
+                        !gtMobile && a.text_md,
+                      ]}>
+                      <Trans>Having trouble?</Trans>{' '}
+                      <InlineLinkText
+                        label={_(msg`Contact support`)}
+                        to={FEEDBACK_FORM_URL({email: state.email})}
+                        style={[!gtMobile && a.text_md]}>
+                        <Trans>Contact support</Trans>
+                      </InlineLinkText>
+                    </Text>
+                  </View>
+                </View>
+              </ScreenTransition>
+            </LayoutAnimationConfig>
           </View>
-        </View>
-      </LoggedOutLayout>
-    </SignupContext.Provider>
+        </LoggedOutLayout>
+      </SignupContext.Provider>
+    </Animated.View>
   )
 }

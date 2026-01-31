@@ -1,7 +1,9 @@
-import React, {ReactNode, createContext, useContext} from 'react'
-import {TextStyle, ViewStyle} from 'react-native'
+import {type ReactNode} from 'react'
+import {createContext, useContext} from 'react'
+import {type TextStyle, type ViewStyle} from 'react-native'
+import {type ThemeName} from '@bsky.app/alf'
+
 import {darkTheme, defaultTheme, dimTheme} from './themes'
-import {ThemeName} from '#/alf/themes'
 
 export type ColorScheme = 'light' | 'dark'
 
@@ -28,6 +30,9 @@ export type Palette = Record<PaletteColorName, PaletteColor>
 export type ShapeName = 'button' | 'bigButton' | 'smallButton'
 export type Shapes = Record<ShapeName, ViewStyle>
 
+/**
+ * @deprecated use typography atoms from `#/alf`
+ */
 export type TypographyVariant =
   | '2xl-thin'
   | '2xl'
@@ -84,6 +89,7 @@ export interface ThemeProviderProps {
 }
 
 export const ThemeContext = createContext<Theme>(defaultTheme)
+ThemeContext.displayName = 'ThemeContext'
 
 export const useTheme = () => useContext(ThemeContext)
 

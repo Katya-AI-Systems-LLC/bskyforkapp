@@ -1,42 +1,38 @@
-import React from 'react'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
-import {useNavigation} from '@react-navigation/native'
+import {StackActions, useNavigation} from '@react-navigation/native'
 
-import {NavigationProp} from 'lib/routes/types'
-import {isNative} from 'platform/detection'
-import {useLeaveConvo} from 'state/queries/messages/leave-conversation'
-import * as Toast from 'view/com/util/Toast'
-import {DialogOuterProps} from '#/components/Dialog'
+import {type NavigationProp} from '#/lib/routes/types'
+import {useLeaveConvo} from '#/state/queries/messages/leave-conversation'
+import * as Toast from '#/view/com/util/Toast'
+import {type DialogOuterProps} from '#/components/Dialog'
 import * as Prompt from '#/components/Prompt'
+import {IS_NATIVE} from '#/env'
 
 export function LeaveConvoPrompt({
   control,
   convoId,
   currentScreen,
+  hasMessages = true,
 }: {
   control: DialogOuterProps['control']
   convoId: string
   currentScreen: 'list' | 'conversation'
+  hasMessages?: boolean
 }) {
   const {_} = useLingui()
   const navigation = useNavigation<NavigationProp>()
 
   const {mutate: leaveConvo} = useLeaveConvo(convoId, {
-    onSuccess: () => {
+    onMutate: () => {
       if (currentScreen === 'conversation') {
-        navigation.replace(
-          'Messages',
-          isNative
-            ? {
-                animation: 'pop',
-              }
-            : {},
+        navigation.dispatch(
+          StackActions.replace('Messages', IS_NATIVE ? {animation: 'pop'} : {}),
         )
       }
     },
     onError: () => {
-      Toast.show(_(msg`Could not leave chat`))
+      Toast.show(_(msg`Could not leave chat`), 'xmark')
     },
   })
 
@@ -44,9 +40,13 @@ export function LeaveConvoPrompt({
     <Prompt.Basic
       control={control}
       title={_(msg`Leave conversation`)}
-      description={_(
-        msg`Are you sure you want to leave this conversation? Your messages will be deleted for you, but not for the other participant.`,
-      )}
+      description={
+        hasMessages
+          ? _(
+              msg`Are you sure you want to leave this conversation? Your messages will be deleted for you, but not for the other participant.`,
+            )
+          : _(msg`Are you sure you want to leave this conversation?`)
+      }
       confirmButtonCta={_(msg`Leave`)}
       confirmButtonColor="negative"
       onConfirm={() => leaveConvo()}

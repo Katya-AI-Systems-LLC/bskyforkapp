@@ -1,46 +1,35 @@
-import React, {ComponentProps} from 'react'
-import {
-  Linking,
-  SafeAreaView,
-  ScrollView,
-  StyleProp,
-  StyleSheet,
-  TouchableOpacity,
-  View,
-  ViewStyle,
-} from 'react-native'
-import {
-  FontAwesomeIcon,
-  FontAwesomeIconStyle,
-} from '@fortawesome/react-native-fontawesome'
-import {msg, Plural, Trans} from '@lingui/macro'
+import React, {type ComponentProps, type JSX} from 'react'
+import {Linking, ScrollView, TouchableOpacity, View} from 'react-native'
+import {useSafeAreaInsets} from 'react-native-safe-area-context'
+import {msg, Plural, plural, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 import {StackActions, useNavigation} from '@react-navigation/native'
 
+import {useActorStatus} from '#/lib/actor-status'
+import {FEEDBACK_FORM_URL, HELP_DESK_URL} from '#/lib/constants'
+import {type PressableScale} from '#/lib/custom-animations/PressableScale'
+import {useNavigationTabState} from '#/lib/hooks/useNavigationTabState'
+import {getTabState, TabState} from '#/lib/routes/helpers'
+import {type NavigationProp} from '#/lib/routes/types'
+import {sanitizeHandle} from '#/lib/strings/handles'
+import {colors} from '#/lib/styles'
 import {emitSoftReset} from '#/state/events'
 import {useKawaiiMode} from '#/state/preferences/kawaii'
 import {useUnreadNotifications} from '#/state/queries/notifications/unread'
 import {useProfileQuery} from '#/state/queries/profile'
-import {SessionAccount, useSession} from '#/state/session'
+import {type SessionAccount, useSession} from '#/state/session'
 import {useSetDrawerOpen} from '#/state/shell'
-import {useAnalytics} from 'lib/analytics/analytics'
-import {FEEDBACK_FORM_URL, HELP_DESK_URL} from 'lib/constants'
-import {useNavigationTabState} from 'lib/hooks/useNavigationTabState'
-import {usePalette} from 'lib/hooks/usePalette'
-import {getTabState, TabState} from 'lib/routes/helpers'
-import {NavigationProp} from 'lib/routes/types'
-import {colors, s} from 'lib/styles'
-import {useTheme} from 'lib/ThemeContext'
-import {isWeb} from 'platform/detection'
+import {formatCount} from '#/view/com/util/numeric/format'
+import {UserAvatar} from '#/view/com/util/UserAvatar'
 import {NavSignupCard} from '#/view/shell/NavSignupCard'
-import {formatCountShortOnly} from 'view/com/util/numeric/format'
-import {Text} from 'view/com/util/text/Text'
-import {UserAvatar} from 'view/com/util/UserAvatar'
-import {useTheme as useAlfTheme} from '#/alf'
+import {atoms as a, tokens, useTheme, web} from '#/alf'
+import {Button, ButtonIcon, ButtonText} from '#/components/Button'
+import {Divider} from '#/components/Divider'
 import {
   Bell_Filled_Corner0_Rounded as BellFilled,
   Bell_Stroke2_Corner0_Rounded as Bell,
 } from '#/components/icons/Bell'
+import {Bookmark, BookmarkFilled} from '#/components/icons/Bookmark'
 import {BulletList_Stroke2_Corner0_Rounded as List} from '#/components/icons/BulletList'
 import {
   Hashtag_Filled_Corner0_Rounded as HashtagFilled,
@@ -50,16 +39,26 @@ import {
   HomeOpen_Filled_Corner0_Rounded as HomeFilled,
   HomeOpen_Stoke2_Corner0_Rounded as Home,
 } from '#/components/icons/HomeOpen'
-import {MagnifyingGlass_Filled_Stroke2_Corner0_Rounded as MagnifyingGlassFilled} from '#/components/icons/MagnifyingGlass'
-import {MagnifyingGlass2_Stroke2_Corner0_Rounded as MagnifyingGlass} from '#/components/icons/MagnifyingGlass2'
+import {
+  MagnifyingGlass_Filled_Stroke2_Corner0_Rounded as MagnifyingGlassFilled,
+  MagnifyingGlass_Stroke2_Corner0_Rounded as MagnifyingGlass,
+} from '#/components/icons/MagnifyingGlass'
+import {
+  Message_Stroke2_Corner0_Rounded as Message,
+  Message_Stroke2_Corner0_Rounded_Filled as MessageFilled,
+} from '#/components/icons/Message'
 import {SettingsGear2_Stroke2_Corner0_Rounded as Settings} from '#/components/icons/SettingsGear2'
 import {
   UserCircle_Filled_Corner0_Rounded as UserCircleFilled,
   UserCircle_Stroke2_Corner0_Rounded as UserCircle,
 } from '#/components/icons/UserCircle'
-import {TextLink} from '../com/util/Link'
+import {InlineLinkText} from '#/components/Link'
+import {Text} from '#/components/Typography'
+import {useSimpleVerificationState} from '#/components/verification'
+import {VerificationCheck} from '#/components/verification/VerificationCheck'
+import {IS_WEB} from '#/env'
 
-const iconWidth = 28
+const iconWidth = 26
 
 let DrawerProfileCard = ({
   account,
@@ -68,39 +67,58 @@ let DrawerProfileCard = ({
   account: SessionAccount
   onPressProfile: () => void
 }): React.ReactNode => {
-  const {_} = useLingui()
-  const pal = usePalette('default')
+  const {_, i18n} = useLingui()
+  const t = useTheme()
   const {data: profile} = useProfileQuery({did: account.did})
+  const verification = useSimpleVerificationState({profile})
+  const {isActive: live} = useActorStatus(profile)
 
   return (
     <TouchableOpacity
       testID="profileCardButton"
       accessibilityLabel={_(msg`Profile`)}
       accessibilityHint={_(msg`Navigates to your profile`)}
-      onPress={onPressProfile}>
+      onPress={onPressProfile}
+      style={[a.gap_sm, a.pr_lg]}>
       <UserAvatar
-        size={80}
+        size={52}
         avatar={profile?.avatar}
         // See https://github.com/bluesky-social/social-app/pull/1801:
         usePlainRNImage={true}
         type={profile?.associated?.labeler ? 'labeler' : 'user'}
+        live={live}
       />
-      <Text
-        type="title-lg"
-        style={[pal.text, s.bold, styles.profileCardDisplayName]}
-        numberOfLines={1}>
-        {profile?.displayName || account.handle}
-      </Text>
-      <Text
-        type="2xl"
-        style={[pal.textLight, styles.profileCardHandle]}
-        numberOfLines={1}>
-        @{account.handle}
-      </Text>
-      <Text type="xl" style={[pal.textLight, styles.profileCardFollowers]}>
+      <View style={[a.gap_2xs]}>
+        <View style={[a.flex_row, a.align_center, a.gap_xs, a.flex_1]}>
+          <Text
+            emoji
+            style={[a.font_bold, a.text_xl, a.mt_2xs, a.leading_tight]}
+            numberOfLines={1}>
+            {profile?.displayName || account.handle}
+          </Text>
+          {verification.showBadge && (
+            <View
+              style={{
+                top: 0,
+              }}>
+              <VerificationCheck
+                width={16}
+                verifier={verification.role === 'verifier'}
+              />
+            </View>
+          )}
+        </View>
+        <Text
+          emoji
+          style={[t.atoms.text_contrast_medium, a.text_md, a.leading_tight]}
+          numberOfLines={1}>
+          {sanitizeHandle(account.handle, '@')}
+        </Text>
+      </View>
+      <Text style={[a.text_md, t.atoms.text_contrast_medium]}>
         <Trans>
-          <Text type="xl-medium" style={pal.text}>
-            {formatCountShortOnly(profile?.followersCount ?? 0)}
+          <Text style={[a.text_md, a.font_semi_bold]}>
+            {formatCount(i18n, profile?.followersCount ?? 0)}
           </Text>{' '}
           <Plural
             value={profile?.followersCount || 0}
@@ -110,8 +128,8 @@ let DrawerProfileCard = ({
         </Trans>{' '}
         &middot;{' '}
         <Trans>
-          <Text type="xl-medium" style={pal.text}>
-            {formatCountShortOnly(profile?.followsCount ?? 0)}
+          <Text style={[a.text_md, a.font_semi_bold]}>
+            {formatCount(i18n, profile?.followsCount ?? 0)}
           </Text>{' '}
           <Plural
             value={profile?.followsCount || 0}
@@ -126,33 +144,35 @@ let DrawerProfileCard = ({
 DrawerProfileCard = React.memo(DrawerProfileCard)
 export {DrawerProfileCard}
 
-let DrawerContent = ({}: {}): React.ReactNode => {
-  const theme = useTheme()
-  const t = useAlfTheme()
-  const pal = usePalette('default')
-  const {_} = useLingui()
+let DrawerContent = ({}: React.PropsWithoutRef<{}>): React.ReactNode => {
+  const t = useTheme()
+  const insets = useSafeAreaInsets()
   const setDrawerOpen = useSetDrawerOpen()
   const navigation = useNavigation<NavigationProp>()
-  const {track} = useAnalytics()
-  const {isAtHome, isAtSearch, isAtFeeds, isAtNotifications, isAtMyProfile} =
-    useNavigationTabState()
+  const {
+    isAtHome,
+    isAtSearch,
+    isAtFeeds,
+    isAtBookmarks,
+    isAtNotifications,
+    isAtMyProfile,
+    isAtMessages,
+  } = useNavigationTabState()
   const {hasSession, currentAccount} = useSession()
-  const kawaii = useKawaiiMode()
 
   // events
   // =
 
   const onPressTab = React.useCallback(
-    (tab: string) => {
-      track('Menu:ItemClicked', {url: tab})
+    (tab: 'Home' | 'Search' | 'Messages' | 'Notifications' | 'MyProfile') => {
       const state = navigation.getState()
       setDrawerOpen(false)
-      if (isWeb) {
+      if (IS_WEB) {
         // hack because we have flat navigator for web and MyProfile does not exist on the web navigator -ansh
         if (tab === 'MyProfile') {
           navigation.navigate('Profile', {name: currentAccount!.handle})
         } else {
-          // @ts-ignore must be Home, Search, Notifications, or MyProfile
+          // @ts-expect-error struggles with string unions, apparently
           navigation.navigate(tab)
         }
       } else {
@@ -160,20 +180,39 @@ let DrawerContent = ({}: {}): React.ReactNode => {
         if (tabState === TabState.InsideAtRoot) {
           emitSoftReset()
         } else if (tabState === TabState.Inside) {
-          navigation.dispatch(StackActions.popToTop())
+          // find the correct navigator in which to pop-to-top
+          const target = state.routes.find(route => route.name === `${tab}Tab`)
+            ?.state?.key
+          if (target) {
+            // if we found it, trigger pop-to-top
+            navigation.dispatch({
+              ...StackActions.popToTop(),
+              target,
+            })
+          } else {
+            // fallback: reset navigation
+            navigation.reset({
+              index: 0,
+              routes: [{name: `${tab}Tab`}],
+            })
+          }
         } else {
-          // @ts-ignore must be Home, Search, Notifications, or MyProfile
           navigation.navigate(`${tab}Tab`)
         }
       }
     },
-    [track, navigation, setDrawerOpen, currentAccount],
+    [navigation, setDrawerOpen, currentAccount],
   )
 
   const onPressHome = React.useCallback(() => onPressTab('Home'), [onPressTab])
 
   const onPressSearch = React.useCallback(
     () => onPressTab('Search'),
+    [onPressTab],
+  )
+
+  const onPressMessages = React.useCallback(
+    () => onPressTab('Messages'),
     [onPressTab],
   )
 
@@ -187,37 +226,37 @@ let DrawerContent = ({}: {}): React.ReactNode => {
   }, [onPressTab])
 
   const onPressMyFeeds = React.useCallback(() => {
-    track('Menu:ItemClicked', {url: 'Feeds'})
     navigation.navigate('Feeds')
     setDrawerOpen(false)
-  }, [navigation, setDrawerOpen, track])
+  }, [navigation, setDrawerOpen])
 
   const onPressLists = React.useCallback(() => {
-    track('Menu:ItemClicked', {url: 'Lists'})
     navigation.navigate('Lists')
     setDrawerOpen(false)
-  }, [navigation, track, setDrawerOpen])
+  }, [navigation, setDrawerOpen])
+
+  const onPressBookmarks = React.useCallback(() => {
+    navigation.navigate('Bookmarks')
+    setDrawerOpen(false)
+  }, [navigation, setDrawerOpen])
 
   const onPressSettings = React.useCallback(() => {
-    track('Menu:ItemClicked', {url: 'Settings'})
     navigation.navigate('Settings')
     setDrawerOpen(false)
-  }, [navigation, track, setDrawerOpen])
+  }, [navigation, setDrawerOpen])
 
   const onPressFeedback = React.useCallback(() => {
-    track('Menu:FeedbackClicked')
     Linking.openURL(
       FEEDBACK_FORM_URL({
         email: currentAccount?.email,
         handle: currentAccount?.handle,
       }),
     )
-  }, [track, currentAccount])
+  }, [currentAccount])
 
   const onPressHelp = React.useCallback(() => {
-    track('Menu:HelpClicked')
     Linking.openURL(HELP_DESK_URL)
-  }, [track])
+  }, [])
 
   // rendering
   // =
@@ -225,87 +264,71 @@ let DrawerContent = ({}: {}): React.ReactNode => {
   return (
     <View
       testID="drawer"
-      style={[
-        styles.view,
-        theme.colorScheme === 'light' ? pal.view : t.atoms.bg_contrast_25,
-      ]}>
-      <SafeAreaView style={s.flex1}>
-        <ScrollView style={styles.main}>
+      style={[a.flex_1, a.border_r, t.atoms.bg, t.atoms.border_contrast_low]}>
+      <ScrollView
+        style={[a.flex_1]}
+        contentContainerStyle={[
+          {
+            paddingTop: Math.max(
+              insets.top + a.pt_xl.paddingTop,
+              a.pt_xl.paddingTop,
+            ),
+          },
+        ]}>
+        <View style={[a.px_xl]}>
           {hasSession && currentAccount ? (
-            <View style={{}}>
-              <DrawerProfileCard
-                account={currentAccount}
-                onPressProfile={onPressProfile}
-              />
-            </View>
+            <DrawerProfileCard
+              account={currentAccount}
+              onPressProfile={onPressProfile}
+            />
           ) : (
-            <View style={{paddingRight: 20}}>
+            <View style={[a.pr_xl]}>
               <NavSignupCard />
             </View>
           )}
 
-          {hasSession ? (
-            <>
-              <View style={{height: 16}} />
-              <SearchMenuItem isActive={isAtSearch} onPress={onPressSearch} />
-              <HomeMenuItem isActive={isAtHome} onPress={onPressHome} />
-              <NotificationsMenuItem
-                isActive={isAtNotifications}
-                onPress={onPressNotifications}
-              />
-              <FeedsMenuItem isActive={isAtFeeds} onPress={onPressMyFeeds} />
-              <ListsMenuItem onPress={onPressLists} />
-              <ProfileMenuItem
-                isActive={isAtMyProfile}
-                onPress={onPressProfile}
-              />
-              <SettingsMenuItem onPress={onPressSettings} />
-            </>
-          ) : (
-            <>
-              <HomeMenuItem isActive={isAtHome} onPress={onPressHome} />
-              <FeedsMenuItem isActive={isAtFeeds} onPress={onPressMyFeeds} />
-              <SearchMenuItem isActive={isAtSearch} onPress={onPressSearch} />
-            </>
-          )}
+          <Divider style={[a.mt_xl, a.mb_sm]} />
+        </View>
 
-          <View style={styles.smallSpacer} />
-
-          <View style={[{flexWrap: 'wrap', gap: 12}, s.flexCol]}>
-            <TextLink
-              type="md"
-              style={pal.link}
-              href="https://bsky.social/about/support/tos"
-              text={_(msg`Terms of Service`)}
+        {hasSession ? (
+          <>
+            <SearchMenuItem isActive={isAtSearch} onPress={onPressSearch} />
+            <HomeMenuItem isActive={isAtHome} onPress={onPressHome} />
+            <ChatMenuItem isActive={isAtMessages} onPress={onPressMessages} />
+            <NotificationsMenuItem
+              isActive={isAtNotifications}
+              onPress={onPressNotifications}
             />
-            <TextLink
-              type="md"
-              style={pal.link}
-              href="https://bsky.social/about/support/privacy-policy"
-              text={_(msg`Privacy Policy`)}
+            <FeedsMenuItem isActive={isAtFeeds} onPress={onPressMyFeeds} />
+            <ListsMenuItem onPress={onPressLists} />
+            <BookmarksMenuItem
+              isActive={isAtBookmarks}
+              onPress={onPressBookmarks}
             />
-            {kawaii && (
-              <Text type="md" style={pal.textLight}>
-                Logo by{' '}
-                <TextLink
-                  type="md"
-                  href="/profile/sawaratsuki.bsky.social"
-                  text="@sawaratsuki.bsky.social"
-                  style={pal.link}
-                />
-              </Text>
-            )}
-          </View>
+            <ProfileMenuItem
+              isActive={isAtMyProfile}
+              onPress={onPressProfile}
+            />
+            <SettingsMenuItem onPress={onPressSettings} />
+          </>
+        ) : (
+          <>
+            <HomeMenuItem isActive={isAtHome} onPress={onPressHome} />
+            <FeedsMenuItem isActive={isAtFeeds} onPress={onPressMyFeeds} />
+            <SearchMenuItem isActive={isAtSearch} onPress={onPressSearch} />
+          </>
+        )}
 
-          <View style={styles.smallSpacer} />
-          <View style={styles.smallSpacer} />
-        </ScrollView>
+        <View style={[a.px_xl]}>
+          <Divider style={[a.mb_xl, a.mt_sm]} />
+          <ExtraLinks />
+        </View>
+      </ScrollView>
 
-        <DrawerFooter
-          onPressFeedback={onPressFeedback}
-          onPressHelp={onPressHelp}
-        />
-      </SafeAreaView>
+      <DrawerFooter
+        onPressFeedback={onPressFeedback}
+        onPressHelp={onPressHelp}
+      />
     </View>
   )
 }
@@ -319,48 +342,53 @@ let DrawerFooter = ({
   onPressFeedback: () => void
   onPressHelp: () => void
 }): React.ReactNode => {
-  const theme = useTheme()
-  const pal = usePalette('default')
   const {_} = useLingui()
+  const insets = useSafeAreaInsets()
   return (
-    <View style={styles.footer}>
-      <TouchableOpacity
-        accessibilityRole="link"
-        accessibilityLabel={_(msg`Send feedback`)}
-        accessibilityHint=""
-        onPress={onPressFeedback}
-        style={[
-          styles.footerBtn,
-          styles.footerBtnFeedback,
-          theme.colorScheme === 'light'
-            ? styles.footerBtnFeedbackLight
-            : styles.footerBtnFeedbackDark,
-        ]}>
-        <FontAwesomeIcon
-          style={pal.link as FontAwesomeIconStyle}
-          size={18}
-          icon={['far', 'message']}
-        />
-        <Text type="lg-medium" style={[pal.link, s.pl10]}>
+    <View
+      style={[
+        a.flex_row,
+        a.gap_sm,
+        a.flex_wrap,
+        a.pl_xl,
+        a.pt_md,
+        {
+          paddingBottom: Math.max(
+            insets.bottom + tokens.space.xs,
+            tokens.space.xl,
+          ),
+        },
+      ]}>
+      <Button
+        label={_(msg`Send feedback`)}
+        size="small"
+        variant="solid"
+        color="secondary"
+        onPress={onPressFeedback}>
+        <ButtonIcon icon={Message} position="left" />
+        <ButtonText>
           <Trans>Feedback</Trans>
-        </Text>
-      </TouchableOpacity>
-      <TouchableOpacity
-        accessibilityRole="link"
-        accessibilityLabel={_(msg`Send feedback`)}
-        accessibilityHint=""
+        </ButtonText>
+      </Button>
+      <Button
+        label={_(msg`Get help`)}
+        size="small"
+        variant="outline"
+        color="secondary"
         onPress={onPressHelp}
-        style={[styles.footerBtn]}>
-        <Text type="lg-medium" style={[pal.link, s.pl10]}>
+        style={{
+          backgroundColor: 'transparent',
+        }}>
+        <ButtonText>
           <Trans>Help</Trans>
-        </Text>
-      </TouchableOpacity>
+        </ButtonText>
+      </Button>
     </View>
   )
 }
 DrawerFooter = React.memo(DrawerFooter)
 
-interface MenuItemProps extends ComponentProps<typeof TouchableOpacity> {
+interface MenuItemProps extends ComponentProps<typeof PressableScale> {
   icon: JSX.Element
   label: string
   count?: string
@@ -375,25 +403,17 @@ let SearchMenuItem = ({
   onPress: () => void
 }): React.ReactNode => {
   const {_} = useLingui()
-  const pal = usePalette('default')
+  const t = useTheme()
   return (
     <MenuItem
       icon={
         isActive ? (
-          <MagnifyingGlassFilled
-            style={pal.text as StyleProp<ViewStyle>}
-            width={iconWidth}
-          />
+          <MagnifyingGlassFilled style={[t.atoms.text]} width={iconWidth} />
         ) : (
-          <MagnifyingGlass
-            style={pal.text as StyleProp<ViewStyle>}
-            width={iconWidth}
-          />
+          <MagnifyingGlass style={[t.atoms.text]} width={iconWidth} />
         )
       }
-      label={_(msg`Search`)}
-      accessibilityLabel={_(msg`Search`)}
-      accessibilityHint=""
+      label={_(msg`Explore`)}
       bold={isActive}
       onPress={onPress}
     />
@@ -409,28 +429,49 @@ let HomeMenuItem = ({
   onPress: () => void
 }): React.ReactNode => {
   const {_} = useLingui()
-  const pal = usePalette('default')
+  const t = useTheme()
   return (
     <MenuItem
       icon={
         isActive ? (
-          <HomeFilled
-            style={pal.text as StyleProp<ViewStyle>}
-            width={iconWidth}
-          />
+          <HomeFilled style={[t.atoms.text]} width={iconWidth} />
         ) : (
-          <Home style={pal.text as StyleProp<ViewStyle>} width={iconWidth} />
+          <Home style={[t.atoms.text]} width={iconWidth} />
         )
       }
       label={_(msg`Home`)}
-      accessibilityLabel={_(msg`Home`)}
-      accessibilityHint=""
       bold={isActive}
       onPress={onPress}
     />
   )
 }
 HomeMenuItem = React.memo(HomeMenuItem)
+
+let ChatMenuItem = ({
+  isActive,
+  onPress,
+}: {
+  isActive: boolean
+  onPress: () => void
+}): React.ReactNode => {
+  const {_} = useLingui()
+  const t = useTheme()
+  return (
+    <MenuItem
+      icon={
+        isActive ? (
+          <MessageFilled style={[t.atoms.text]} width={iconWidth} />
+        ) : (
+          <Message style={[t.atoms.text]} width={iconWidth} />
+        )
+      }
+      label={_(msg`Chat`)}
+      bold={isActive}
+      onPress={onPress}
+    />
+  )
+}
+ChatMenuItem = React.memo(ChatMenuItem)
 
 let NotificationsMenuItem = ({
   isActive,
@@ -440,26 +481,27 @@ let NotificationsMenuItem = ({
   onPress: () => void
 }): React.ReactNode => {
   const {_} = useLingui()
-  const pal = usePalette('default')
+  const t = useTheme()
   const numUnreadNotifications = useUnreadNotifications()
   return (
     <MenuItem
       icon={
         isActive ? (
-          <BellFilled
-            style={pal.text as StyleProp<ViewStyle>}
-            width={iconWidth}
-          />
+          <BellFilled style={[t.atoms.text]} width={iconWidth} />
         ) : (
-          <Bell style={pal.text as StyleProp<ViewStyle>} width={iconWidth} />
+          <Bell style={[t.atoms.text]} width={iconWidth} />
         )
       }
       label={_(msg`Notifications`)}
-      accessibilityLabel={_(msg`Notifications`)}
       accessibilityHint={
         numUnreadNotifications === ''
           ? ''
-          : _(msg`${numUnreadNotifications} unread`)
+          : _(
+              plural(numUnreadNotifications ?? 0, {
+                one: '# unread item',
+                other: '# unread items',
+              }),
+            )
       }
       count={numUnreadNotifications}
       bold={isActive}
@@ -477,22 +519,17 @@ let FeedsMenuItem = ({
   onPress: () => void
 }): React.ReactNode => {
   const {_} = useLingui()
-  const pal = usePalette('default')
+  const t = useTheme()
   return (
     <MenuItem
       icon={
         isActive ? (
-          <HashtagFilled
-            width={iconWidth}
-            style={pal.text as FontAwesomeIconStyle}
-          />
+          <HashtagFilled width={iconWidth} style={[t.atoms.text]} />
         ) : (
-          <Hashtag width={iconWidth} style={pal.text as FontAwesomeIconStyle} />
+          <Hashtag width={iconWidth} style={[t.atoms.text]} />
         )
       }
       label={_(msg`Feeds`)}
-      accessibilityLabel={_(msg`Feeds`)}
-      accessibilityHint=""
       bold={isActive}
       onPress={onPress}
     />
@@ -502,18 +539,43 @@ FeedsMenuItem = React.memo(FeedsMenuItem)
 
 let ListsMenuItem = ({onPress}: {onPress: () => void}): React.ReactNode => {
   const {_} = useLingui()
-  const pal = usePalette('default')
+  const t = useTheme()
+
   return (
     <MenuItem
-      icon={<List style={pal.text} width={iconWidth} />}
+      icon={<List style={[t.atoms.text]} width={iconWidth} />}
       label={_(msg`Lists`)}
-      accessibilityLabel={_(msg`Lists`)}
-      accessibilityHint=""
       onPress={onPress}
     />
   )
 }
 ListsMenuItem = React.memo(ListsMenuItem)
+
+let BookmarksMenuItem = ({
+  isActive,
+  onPress,
+}: {
+  isActive: boolean
+  onPress: () => void
+}): React.ReactNode => {
+  const {_} = useLingui()
+  const t = useTheme()
+
+  return (
+    <MenuItem
+      icon={
+        isActive ? (
+          <BookmarkFilled style={[t.atoms.text]} width={iconWidth} />
+        ) : (
+          <Bookmark style={[t.atoms.text]} width={iconWidth} />
+        )
+      }
+      label={_(msg({message: 'Saved', context: 'link to bookmarks screen'}))}
+      onPress={onPress}
+    />
+  )
+}
+BookmarksMenuItem = React.memo(BookmarksMenuItem)
 
 let ProfileMenuItem = ({
   isActive,
@@ -523,25 +585,17 @@ let ProfileMenuItem = ({
   onPress: () => void
 }): React.ReactNode => {
   const {_} = useLingui()
-  const pal = usePalette('default')
+  const t = useTheme()
   return (
     <MenuItem
       icon={
         isActive ? (
-          <UserCircleFilled
-            style={pal.text as StyleProp<ViewStyle>}
-            width={iconWidth}
-          />
+          <UserCircleFilled style={[t.atoms.text]} width={iconWidth} />
         ) : (
-          <UserCircle
-            style={pal.text as StyleProp<ViewStyle>}
-            width={iconWidth}
-          />
+          <UserCircle style={[t.atoms.text]} width={iconWidth} />
         )
       }
       label={_(msg`Profile`)}
-      accessibilityLabel={_(msg`Profile`)}
-      accessibilityHint=""
       onPress={onPress}
     />
   )
@@ -550,165 +604,121 @@ ProfileMenuItem = React.memo(ProfileMenuItem)
 
 let SettingsMenuItem = ({onPress}: {onPress: () => void}): React.ReactNode => {
   const {_} = useLingui()
-  const pal = usePalette('default')
+  const t = useTheme()
   return (
     <MenuItem
-      icon={
-        <Settings style={pal.text as StyleProp<ViewStyle>} width={iconWidth} />
-      }
+      icon={<Settings style={[t.atoms.text]} width={iconWidth} />}
       label={_(msg`Settings`)}
-      accessibilityLabel={_(msg`Settings`)}
-      accessibilityHint=""
       onPress={onPress}
     />
   )
 }
 SettingsMenuItem = React.memo(SettingsMenuItem)
 
-function MenuItem({
-  icon,
-  label,
-  accessibilityLabel,
-  count,
-  bold,
-  onPress,
-}: MenuItemProps) {
-  const pal = usePalette('default')
+function MenuItem({icon, label, count, bold, onPress}: MenuItemProps) {
+  const t = useTheme()
   return (
-    <TouchableOpacity
+    <Button
       testID={`menuItemButton-${label}`}
-      style={styles.menuItem}
       onPress={onPress}
       accessibilityRole="tab"
-      accessibilityLabel={accessibilityLabel}
-      accessibilityHint="">
-      <View style={[styles.menuItemIconWrapper]}>
-        {icon}
-        {count ? (
-          <View
-            style={[
-              styles.menuItemCount,
-              count.length > 2
-                ? styles.menuItemCountHundreds
-                : count.length > 1
-                ? styles.menuItemCountTens
-                : undefined,
-            ]}>
-            <Text style={styles.menuItemCountLabel} numberOfLines={1}>
-              {count}
-            </Text>
+      label={label}>
+      {({hovered, pressed}) => (
+        <View
+          style={[
+            a.flex_1,
+            a.flex_row,
+            a.align_center,
+            a.gap_md,
+            a.py_md,
+            a.px_xl,
+            (hovered || pressed) && t.atoms.bg_contrast_25,
+          ]}>
+          <View style={[a.relative]}>
+            {icon}
+            {count ? (
+              <View
+                style={[
+                  a.absolute,
+                  a.inset_0,
+                  a.align_end,
+                  {top: -4, right: a.gap_sm.gap * -1},
+                ]}>
+                <View
+                  style={[
+                    a.rounded_full,
+                    {
+                      right: count.length === 1 ? 6 : 0,
+                      paddingHorizontal: 4,
+                      paddingVertical: 1,
+                      backgroundColor: t.palette.primary_500,
+                    },
+                  ]}>
+                  <Text
+                    style={[
+                      a.text_xs,
+                      a.leading_tight,
+                      a.font_semi_bold,
+                      {
+                        fontVariant: ['tabular-nums'],
+                        color: colors.white,
+                      },
+                    ]}
+                    numberOfLines={1}>
+                    {count}
+                  </Text>
+                </View>
+              </View>
+            ) : undefined}
           </View>
-        ) : undefined}
-      </View>
-      <Text
-        type={bold ? '2xl-bold' : '2xl'}
-        style={[pal.text, s.flex1]}
-        numberOfLines={1}>
-        {label}
-      </Text>
-    </TouchableOpacity>
+          <Text
+            style={[
+              a.flex_1,
+              a.text_2xl,
+              bold && a.font_bold,
+              web(a.leading_snug),
+            ]}
+            numberOfLines={1}>
+            {label}
+          </Text>
+        </View>
+      )}
+    </Button>
   )
 }
 
-const styles = StyleSheet.create({
-  view: {
-    flex: 1,
-    paddingBottom: 50,
-    maxWidth: 300,
-  },
-  viewDarkMode: {
-    backgroundColor: '#1B1919',
-  },
-  main: {
-    paddingLeft: 20,
-    paddingTop: 20,
-  },
-  smallSpacer: {
-    height: 20,
-  },
+function ExtraLinks() {
+  const {_} = useLingui()
+  const t = useTheme()
+  const kawaii = useKawaiiMode()
 
-  profileCardDisplayName: {
-    marginTop: 20,
-    paddingRight: 30,
-  },
-  profileCardHandle: {
-    marginTop: 4,
-    paddingRight: 30,
-  },
-  profileCardFollowers: {
-    marginTop: 16,
-    paddingRight: 10,
-  },
-
-  menuItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingVertical: 16,
-    paddingRight: 10,
-  },
-  menuItemIconWrapper: {
-    width: 24,
-    height: 24,
-    alignItems: 'center',
-    justifyContent: 'center',
-    marginRight: 12,
-  },
-  menuItemCount: {
-    position: 'absolute',
-    width: 'auto',
-    right: -6,
-    top: -4,
-    backgroundColor: colors.blue3,
-    paddingHorizontal: 4,
-    paddingBottom: 1,
-    borderRadius: 6,
-  },
-  menuItemCountTens: {
-    width: 25,
-  },
-  menuItemCountHundreds: {
-    right: -12,
-    width: 34,
-  },
-  menuItemCountLabel: {
-    fontSize: 12,
-    fontWeight: 'bold',
-    fontVariant: ['tabular-nums'],
-    color: colors.white,
-  },
-
-  inviteCodes: {
-    paddingLeft: 0,
-    paddingVertical: 8,
-    flexDirection: 'row',
-  },
-  inviteCodesIcon: {
-    marginRight: 6,
-    flexShrink: 0,
-    marginTop: 2,
-  },
-
-  footer: {
-    flexWrap: 'wrap',
-    flexDirection: 'row',
-    gap: 8,
-    paddingRight: 20,
-    paddingTop: 20,
-    paddingLeft: 20,
-  },
-  footerBtn: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: 10,
-    borderRadius: 25,
-  },
-  footerBtnFeedback: {
-    paddingHorizontal: 20,
-  },
-  footerBtnFeedbackLight: {
-    backgroundColor: '#DDEFFF',
-  },
-  footerBtnFeedbackDark: {
-    backgroundColor: colors.blue6,
-  },
-})
+  return (
+    <View style={[a.flex_col, a.gap_md, a.flex_wrap]}>
+      <InlineLinkText
+        style={[a.text_md]}
+        label={_(msg`Terms of Service`)}
+        to="https://bsky.social/about/support/tos">
+        <Trans>Terms of Service</Trans>
+      </InlineLinkText>
+      <InlineLinkText
+        style={[a.text_md]}
+        to="https://bsky.social/about/support/privacy-policy"
+        label={_(msg`Privacy Policy`)}>
+        <Trans>Privacy Policy</Trans>
+      </InlineLinkText>
+      {kawaii && (
+        <Text style={t.atoms.text_contrast_medium}>
+          <Trans>
+            Logo by{' '}
+            <InlineLinkText
+              style={[a.text_md]}
+              to="/profile/sawaratsuki.bsky.social"
+              label="@sawaratsuki.bsky.social">
+              @sawaratsuki.bsky.social
+            </InlineLinkText>
+          </Trans>
+        </Text>
+      )}
+    </View>
+  )
+}

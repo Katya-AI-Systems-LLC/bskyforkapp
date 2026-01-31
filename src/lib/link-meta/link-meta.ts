@@ -1,10 +1,9 @@
-import {BskyAgent} from '@atproto/api'
+import {type BskyAgent} from '@atproto/api'
 
-import {LINK_META_PROXY} from 'lib/constants'
-import {getGiphyMetaUri} from 'lib/strings/embed-player'
-import {parseStarterPackUri} from 'lib/strings/starter-pack'
+import {LINK_META_PROXY} from '#/lib/constants'
+import {getGiphyMetaUri} from '#/lib/strings/embed-player'
+import {parseStarterPackUri} from '#/lib/strings/starter-pack'
 import {isBskyAppUrl} from '../strings/url-helpers'
-import {extractBskyMeta} from './bsky'
 
 export enum LikelyType {
   HTML,
@@ -31,10 +30,14 @@ export async function getLinkMeta(
   timeout = 15e3,
 ): Promise<LinkMeta> {
   if (isBskyAppUrl(url) && !parseStarterPackUri(url)) {
-    return extractBskyMeta(agent, url)
+    return {
+      likelyType: LikelyType.AtpData,
+      url,
+    }
   }
 
   let urlp
+  let shouldFollowRedirect = false
   try {
     urlp = new URL(url)
 
@@ -44,6 +47,9 @@ export async function getLinkMeta(
       url = giphyMetaUri
       urlp = new URL(url)
     }
+    // follow redirects for soundcloud shortlinks
+    // QUESTION - do we want to follow redirects in other cases? -sfn
+    shouldFollowRedirect = urlp.hostname === 'on.soundcloud.com'
   } catch (e) {
     return {
       error: 'Invalid URL',
@@ -56,37 +62,42 @@ export async function getLinkMeta(
     likelyType,
     url,
   }
-  if (likelyType !== LikelyType.HTML) {
+  const htmlExemptedHostnames: string[] = ['storage.courtlistener.com']
+  const isExemptedFromHtmlCheck = htmlExemptedHostnames.includes(urlp.hostname)
+  // Skip early return only for hosts exempted from the HTML check
+  if (likelyType !== LikelyType.HTML && !isExemptedFromHtmlCheck) {
     return meta
   }
 
-  try {
-    const controller = new AbortController()
-    const to = setTimeout(() => controller.abort(), timeout || 5e3)
+  const controller = new AbortController()
+  const to = setTimeout(() => controller.abort(), timeout || 5e3)
 
+  try {
     const response = await fetch(
-      `${LINK_META_PROXY(agent.service.toString() || '')}${encodeURIComponent(
+      `${LINK_META_PROXY(agent.serviceUrl.toString() || '')}${encodeURIComponent(
         url,
       )}`,
       {signal: controller.signal},
     )
 
     const body = await response.json()
-    clearTimeout(to)
 
-    const {description, error, image, title} = body
-
-    if (error !== '') {
-      throw new Error(error)
+    if (body.error !== '') {
+      throw new Error(body.error)
     }
 
-    meta.description = description
-    meta.image = image
-    meta.title = title
+    meta.description = body.description
+    meta.image = body.image
+    meta.title = body.title
+    if (shouldFollowRedirect) {
+      meta.url = body.url
+    }
   } catch (e) {
     // failed
     console.error(e)
     meta.error = e instanceof Error ? e.toString() : 'Failed to fetch link'
+  } finally {
+    clearTimeout(to)
   }
 
   return meta

@@ -1,0 +1,21 @@
+<svg width="1024" height="1024" viewBox="0 0 1024 1024" xmlns="http://www.w3.org/2000/svg">
+  <!-- Фон -->
+  <rect width="1024" height="1024" fill="#0066FF" rx="180"/>
+  
+  <!-- Облако -->
+  <path d="M300 400 Q200 350 200 450 Q200 550 300 550 L700 550 Q800 550 800 450 Q800 350 700 400 Q650 300 550 350 Q500 250 400 300 Q350 350 300 400" fill="white"/>
+  
+  <!-- Точки соединения -->
+  <circle cx="350" cy="450" r="25" fill="#0066FF"/>
+  <circle cx="512" cy="450" r="25" fill="#0066FF"/>
+  <circle cx="674" cy="450" r="25" fill="#0066FF"/>
+  
+  <!-- Линии связи -->
+  <line x1="350" y1="450" x2="512" y2="450" stroke="white" stroke-width="10"/>
+  <line x1="512" y1="450" x2="674" y2="450" stroke="white" stroke-width="10"/>
+  
+  <!-- Дополнительные элементы декорации -->
+  <circle cx="250" cy="350" r="8" fill="white" opacity="0.8"/>
+  <circle cx="770" cy="350" r="8" fill="white" opacity="0.8"/>
+  <circle cx="512" cy="280" r="8" fill="white" opacity="0.8"/>
+</svg>

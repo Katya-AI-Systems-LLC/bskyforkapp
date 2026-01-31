@@ -1,94 +1,156 @@
-import React from 'react'
-import {StyleProp, TouchableOpacity, View, ViewStyle} from 'react-native'
-import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome'
-import {msg} from '@lingui/macro'
-import {useLingui} from '@lingui/react'
+import {useMemo} from 'react'
+import {type StyleProp, View, type ViewStyle} from 'react-native'
 
-import {ExternalEmbedDraft} from 'lib/api/index'
-import {s} from 'lib/styles'
-import {Gif} from 'state/queries/tenor'
-import {ExternalLinkEmbed} from 'view/com/util/post-embeds/ExternalLinkEmbed'
+import {cleanError} from '#/lib/strings/errors'
+import {
+  useResolveGifQuery,
+  useResolveLinkQuery,
+} from '#/state/queries/resolve-link'
+import {type Gif} from '#/state/queries/tenor'
+import {ExternalEmbedRemoveBtn} from '#/view/com/composer/ExternalEmbedRemoveBtn'
 import {atoms as a, useTheme} from '#/alf'
 import {Loader} from '#/components/Loader'
+import {ExternalEmbed} from '#/components/Post/Embed/ExternalEmbed'
+import {ModeratedFeedEmbed} from '#/components/Post/Embed/FeedEmbed'
+import {ModeratedListEmbed} from '#/components/Post/Embed/ListEmbed'
+import {Embed as StarterPackEmbed} from '#/components/StarterPack/StarterPackCard'
 import {Text} from '#/components/Typography'
 
-export const ExternalEmbed = ({
-  link,
+export const ExternalEmbedGif = ({
   onRemove,
   gif,
 }: {
-  link?: ExternalEmbedDraft
   onRemove: () => void
-  gif?: Gif
+  gif: Gif
 }) => {
   const t = useTheme()
-  const {_} = useLingui()
-
-  const linkInfo = React.useMemo(
+  const {data, error} = useResolveGifQuery(gif)
+  const linkInfo = useMemo(
     () =>
-      link && {
-        title: link.meta?.title ?? link.uri,
-        uri: link.uri,
-        description: link.meta?.description ?? '',
-        thumb: link.localThumb?.path,
+      data && {
+        title: data.title ?? data.uri,
+        uri: data.uri,
+        description: data.description ?? '',
+        thumb: data.thumb?.source.path,
       },
-    [link],
+    [data],
   )
 
-  if (!link) return null
-
-  const loadingStyle: ViewStyle | undefined = gif
-    ? {
-        aspectRatio:
-          gif.media_formats.gif.dims[0] / gif.media_formats.gif.dims[1],
-        width: '100%',
+  const loadingStyle: ViewStyle = {
+    aspectRatio: (() => {
+      const dims = gif.media_formats.gif?.dims
+      if (dims && dims[0] > 0 && dims[1] > 0) {
+        return dims[0] / dims[1]
       }
-    : undefined
+      return 16 / 9 // Default aspect ratio
+    })(),
+    width: '100%',
+  }
 
   return (
-    <View
-      style={[
-        !gif && a.mb_xl,
-        a.overflow_hidden,
-        t.atoms.border_contrast_medium,
-      ]}>
-      {link.isLoading ? (
+    <View style={[a.overflow_hidden, t.atoms.border_contrast_medium]}>
+      {linkInfo ? (
+        <View style={{pointerEvents: 'auto'}}>
+          <ExternalEmbed link={linkInfo} hideAlt />
+        </View>
+      ) : error ? (
+        <Container style={[a.align_start, a.p_md, a.gap_xs]}>
+          <Text numberOfLines={1} style={t.atoms.text_contrast_high}>
+            {gif.url}
+          </Text>
+          <Text numberOfLines={2} style={[{color: t.palette.negative_400}]}>
+            {cleanError(error)}
+          </Text>
+        </Container>
+      ) : (
         <Container style={loadingStyle}>
           <Loader size="xl" />
         </Container>
-      ) : link.meta?.error ? (
+      )}
+      <ExternalEmbedRemoveBtn onRemove={onRemove} />
+    </View>
+  )
+}
+
+export const ExternalEmbedLink = ({
+  uri,
+  hasQuote,
+  onRemove,
+}: {
+  uri: string
+  hasQuote: boolean
+  onRemove: () => void
+}) => {
+  const t = useTheme()
+  const {data, error} = useResolveLinkQuery(uri)
+  const linkComponent = useMemo(() => {
+    if (data) {
+      if (data.type === 'external') {
+        return (
+          <ExternalEmbed
+            link={{
+              title: data.title || uri,
+              uri,
+              description: data.description,
+              thumb: data.thumb?.source.path,
+            }}
+            hideAlt
+          />
+        )
+      } else if (data.kind === 'feed') {
+        return (
+          <ModeratedFeedEmbed
+            embed={{
+              type: 'feed',
+              view: {
+                $type: 'app.bsky.feed.defs#generatorView',
+                ...data.view,
+              },
+            }}
+          />
+        )
+      } else if (data.kind === 'list') {
+        return (
+          <ModeratedListEmbed
+            embed={{
+              type: 'list',
+              view: {
+                $type: 'app.bsky.graph.defs#listView',
+                ...data.view,
+              },
+            }}
+          />
+        )
+      } else if (data.kind === 'starter-pack') {
+        return <StarterPackEmbed starterPack={data.view} />
+      }
+    }
+  }, [data, uri])
+
+  if (data?.type === 'record' && hasQuote) {
+    // This is not currently supported by the data model so don't preview it.
+    return null
+  }
+
+  return (
+    <View style={[a.mb_xl, a.overflow_hidden, t.atoms.border_contrast_medium]}>
+      {linkComponent ? (
+        <View style={{pointerEvents: 'none'}}>{linkComponent}</View>
+      ) : error ? (
         <Container style={[a.align_start, a.p_md, a.gap_xs]}>
           <Text numberOfLines={1} style={t.atoms.text_contrast_high}>
-            {link.uri}
+            {uri}
           </Text>
           <Text numberOfLines={2} style={[{color: t.palette.negative_400}]}>
-            {link.meta?.error}
+            {cleanError(error)}
           </Text>
         </Container>
-      ) : linkInfo ? (
-        <View style={{pointerEvents: !gif ? 'none' : 'auto'}}>
-          <ExternalLinkEmbed link={linkInfo} hideAlt />
-        </View>
-      ) : null}
-      <TouchableOpacity
-        style={{
-          position: 'absolute',
-          top: 16,
-          right: 10,
-          height: 36,
-          width: 36,
-          backgroundColor: 'rgba(0, 0, 0, 0.75)',
-          borderRadius: 18,
-          alignItems: 'center',
-          justifyContent: 'center',
-        }}
-        onPress={onRemove}
-        accessibilityRole="button"
-        accessibilityLabel={_(msg`Remove image preview`)}
-        accessibilityHint={_(msg`Removes default thumbnail from ${link.uri}`)}
-        onAccessibilityEscape={onRemove}>
-        <FontAwesomeIcon size={18} icon="xmark" style={s.white} />
-      </TouchableOpacity>
+      ) : (
+        <Container>
+          <Loader size="xl" />
+        </Container>
+      )}
+      <ExternalEmbedRemoveBtn onRemove={onRemove} />
     </View>
   )
 }
@@ -104,7 +166,6 @@ function Container({
   return (
     <View
       style={[
-        a.mt_sm,
         a.rounded_sm,
         a.border,
         a.align_center,

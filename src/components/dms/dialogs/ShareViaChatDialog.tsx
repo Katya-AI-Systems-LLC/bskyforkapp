@@ -1,12 +1,13 @@
-import React, {useCallback} from 'react'
+import {useCallback} from 'react'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
+import {logger} from '#/logger'
 import {useGetConvoForMembers} from '#/state/queries/messages/get-convo-for-members'
-import {logEvent} from 'lib/statsig/statsig'
 import * as Toast from '#/view/com/util/Toast'
 import * as Dialog from '#/components/Dialog'
-import {SearchablePeopleList} from './SearchablePeopleList'
+import {SearchablePeopleList} from '#/components/dialogs/SearchablePeopleList'
+import {useAnalytics} from '#/analytics'
 
 export function SendViaChatDialog({
   control,
@@ -16,10 +17,8 @@ export function SendViaChatDialog({
   onSelectChat: (chatId: string) => void
 }) {
   return (
-    <Dialog.Outer
-      control={control}
-      testID="sendViaChatChatDialog"
-      nativeOptions={{sheet: {snapPoints: ['100%']}}}>
+    <Dialog.Outer control={control} testID="sendViaChatChatDialog">
+      <Dialog.Handle />
       <SendViaChatDialogInner control={control} onSelectChat={onSelectChat} />
     </Dialog.Outer>
   )
@@ -33,17 +32,22 @@ function SendViaChatDialogInner({
   onSelectChat: (chatId: string) => void
 }) {
   const {_} = useLingui()
+  const ax = useAnalytics()
   const {mutate: createChat} = useGetConvoForMembers({
     onSuccess: data => {
       onSelectChat(data.convo.id)
 
       if (!data.convo.lastMessage) {
-        logEvent('chat:create', {logContext: 'SendViaChatDialog'})
+        ax.metric('chat:create', {logContext: 'SendViaChatDialog'})
       }
-      logEvent('chat:open', {logContext: 'SendViaChatDialog'})
+      ax.metric('chat:open', {logContext: 'SendViaChatDialog'})
     },
     onError: error => {
-      Toast.show(error.message)
+      logger.error('Failed to share post to chat', {message: error})
+      Toast.show(
+        _(msg`An issue occurred while trying to open the chat`),
+        'xmark',
+      )
     },
   })
 
@@ -59,6 +63,7 @@ function SendViaChatDialogInner({
       title={_(msg`Send post to...`)}
       onSelectChat={onCreateChat}
       showRecentConvos
+      sortByMessageDeclaration
     />
   )
 }

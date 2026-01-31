@@ -1,47 +1,75 @@
-import RNFS from 'react-native-fs'
 import {
-  Image as RNImage,
-  openCropper as openCropperFn,
-} from 'react-native-image-crop-picker'
+  documentDirectory,
+  getInfoAsync,
+  readDirectoryAsync,
+} from 'expo-file-system/legacy'
+import {type ImagePickerResult} from 'expo-image-picker'
+import ExpoImageCropTool, {
+  type OpenCropperOptions,
+} from '@bsky.app/expo-image-crop-tool'
 
 import {compressIfNeeded} from './manip'
-import {CropperOptions} from './types'
+import {type PickerImage} from './picker.shared'
 
 async function getFile() {
-  let files = await RNFS.readDir(
-    RNFS.LibraryDirectoryPath.split('/')
-      .slice(0, -5)
-      .concat(['Media', 'DCIM', '100APPLE'])
-      .join('/'),
-  )
-  files = files.filter(file => file.path.endsWith('.JPG'))
-  const file = files[0]
+  const imagesDir = documentDirectory!
+    .split('/')
+    .slice(0, -6)
+    .concat(['Media', 'DCIM', '100APPLE'])
+    .join('/')
+
+  let files = await readDirectoryAsync(imagesDir)
+  files = files.filter(file => file.endsWith('.JPG'))
+  const file = `${imagesDir}/${files[0]}`
+
+  const fileInfo = await getInfoAsync(file)
+
+  if (!fileInfo.exists) {
+    throw new Error('Failed to get file info')
+  }
+
   return await compressIfNeeded({
-    path: file.path,
+    path: file,
     mime: 'image/jpeg',
-    size: file.size,
+    size: fileInfo.size,
     width: 4288,
     height: 2848,
   })
 }
 
-export async function openPicker(): Promise<RNImage[]> {
+export async function openPicker(): Promise<PickerImage[]> {
   return [await getFile()]
 }
 
-export async function openCamera(): Promise<RNImage> {
+export async function openUnifiedPicker(): Promise<ImagePickerResult> {
+  const file = await getFile()
+
+  return {
+    assets: [
+      {
+        type: 'image',
+        uri: file.path,
+        mimeType: file.mime,
+        ...file,
+      },
+    ],
+    canceled: false,
+  }
+}
+
+export async function openCamera(): Promise<PickerImage> {
   return await getFile()
 }
 
-export async function openCropper(opts: CropperOptions) {
-  const item = await openCropperFn({
+export async function openCropper(opts: OpenCropperOptions) {
+  const item = await ExpoImageCropTool.openCropperAsync({
     ...opts,
-    forceJpg: true, // ios only
+    format: 'jpeg',
   })
 
   return {
     path: item.path,
-    mime: item.mime,
+    mime: item.mimeType,
     size: item.size,
     width: item.width,
     height: item.height,

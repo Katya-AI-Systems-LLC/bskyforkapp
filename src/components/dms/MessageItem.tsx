@@ -1,28 +1,40 @@
-import React, {useCallback, useMemo, useRef} from 'react'
+import React, {useCallback, useMemo} from 'react'
 import {
-  GestureResponderEvent,
-  LayoutAnimation,
-  StyleProp,
-  TextStyle,
+  type GestureResponderEvent,
+  type StyleProp,
+  type TextStyle,
   View,
 } from 'react-native'
+import Animated, {
+  LayoutAnimationConfig,
+  LinearTransition,
+  ZoomIn,
+  ZoomOut,
+} from 'react-native-reanimated'
 import {
   AppBskyEmbedRecord,
   ChatBskyConvoDefs,
   RichText as RichTextAPI,
 } from '@atproto/api'
+import {type I18n} from '@lingui/core'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
-import {ConvoItem} from '#/state/messages/convo/types'
+import {sanitizeDisplayName} from '#/lib/strings/display-names'
+import {useConvoActive} from '#/state/messages/convo'
+import {type ConvoItem} from '#/state/messages/convo/types'
 import {useSession} from '#/state/session'
-import {TimeElapsed} from 'view/com/util/TimeElapsed'
-import {atoms as a, useTheme} from '#/alf'
+import {TimeElapsed} from '#/view/com/util/TimeElapsed'
+import {atoms as a, native, useTheme} from '#/alf'
+import {isOnlyEmoji} from '#/alf/typography'
 import {ActionsWrapper} from '#/components/dms/ActionsWrapper'
 import {InlineLinkText} from '#/components/Link'
+import {RichText} from '#/components/RichText'
 import {Text} from '#/components/Typography'
-import {isOnlyEmoji, RichText} from '../RichText'
+import {IS_NATIVE} from '#/env'
+import {DateDivider} from './DateDivider'
 import {MessageItemEmbed} from './MessageItemEmbed'
+import {localDateString} from './util'
 
 let MessageItem = ({
   item,
@@ -31,15 +43,40 @@ let MessageItem = ({
 }): React.ReactNode => {
   const t = useTheme()
   const {currentAccount} = useSession()
+  const {_} = useLingui()
+  const {convo} = useConvoActive()
 
-  const {message, nextMessage} = item
+  const {message, nextMessage, prevMessage} = item
   const isPending = item.type === 'pending-message'
 
   const isFromSelf = message.sender?.did === currentAccount?.did
 
+  const nextIsMessage = ChatBskyConvoDefs.isMessageView(nextMessage)
+
   const isNextFromSelf =
-    ChatBskyConvoDefs.isMessageView(nextMessage) &&
-    nextMessage.sender?.did === currentAccount?.did
+    nextIsMessage && nextMessage.sender?.did === currentAccount?.did
+
+  const isNextFromSameSender = isNextFromSelf === isFromSelf
+
+  const isNewDay = useMemo(() => {
+    if (!prevMessage) return true
+
+    const thisDate = new Date(message.sentAt)
+    const prevDate = new Date(prevMessage.sentAt)
+
+    return localDateString(thisDate) !== localDateString(prevDate)
+  }, [message, prevMessage])
+
+  const isLastMessageOfDay = useMemo(() => {
+    if (!nextMessage || !nextIsMessage) return true
+
+    const thisDate = new Date(message.sentAt)
+    const prevDate = new Date(nextMessage.sentAt)
+
+    return localDateString(thisDate) !== localDateString(prevDate)
+  }, [message.sentAt, nextIsMessage, nextMessage])
+
+  const needsTail = isLastMessageOfDay || !isNextFromSameSender
 
   const isLastInGroup = useMemo(() => {
     // if this message is pending, it means the next message is pending too
@@ -47,90 +84,153 @@ let MessageItem = ({
       return false
     }
 
-    // if the next message is from a different sender, then it's the last in the group
-    if (isFromSelf ? !isNextFromSelf : isNextFromSelf) {
-      return true
-    }
-
-    // or, if there's a 3 minute gap between this message and the next
+    // or, if there's a 5 minute gap between this message and the next
     if (ChatBskyConvoDefs.isMessageView(nextMessage)) {
       const thisDate = new Date(message.sentAt)
       const nextDate = new Date(nextMessage.sentAt)
 
       const diff = nextDate.getTime() - thisDate.getTime()
 
-      // 3 minutes
-      return diff > 3 * 60 * 1000
+      // 5 minutes
+      return diff > 5 * 60 * 1000
     }
 
     return true
-  }, [message, nextMessage, isFromSelf, isNextFromSelf, isPending])
+  }, [message, nextMessage, isPending])
 
-  const lastInGroupRef = useRef(isLastInGroup)
-  if (lastInGroupRef.current !== isLastInGroup) {
-    LayoutAnimation.configureNext(LayoutAnimation.Presets.easeInEaseOut)
-    lastInGroupRef.current = isLastInGroup
-  }
-
-  const pendingColor =
-    t.name === 'light' ? t.palette.primary_200 : t.palette.primary_800
+  const pendingColor = t.palette.primary_200
 
   const rt = useMemo(() => {
     return new RichTextAPI({text: message.text, facets: message.facets})
   }, [message.text, message.facets])
 
-  return (
-    <View style={[isFromSelf ? a.mr_md : a.ml_md]}>
-      <ActionsWrapper isFromSelf={isFromSelf} message={message}>
-        {AppBskyEmbedRecord.isView(message.embed) && (
-          <MessageItemEmbed embed={message.embed} />
-        )}
-        {rt.text.length > 0 && (
+  const appliedReactions = (
+    <LayoutAnimationConfig skipEntering skipExiting>
+      {message.reactions && message.reactions.length > 0 && (
+        <View
+          style={[isFromSelf ? a.align_end : a.align_start, a.px_sm, a.pb_2xs]}>
           <View
-            style={
-              !isOnlyEmoji(message.text) && [
-                a.py_sm,
-                a.my_2xs,
-                a.rounded_md,
-                {
-                  paddingLeft: 14,
-                  paddingRight: 14,
-                  backgroundColor: isFromSelf
-                    ? isPending
-                      ? pendingColor
-                      : t.palette.primary_500
-                    : t.palette.contrast_50,
-                  borderRadius: 17,
-                },
-                isFromSelf ? a.self_end : a.self_start,
-                isFromSelf
-                  ? {borderBottomRightRadius: isLastInGroup ? 2 : 17}
-                  : {borderBottomLeftRadius: isLastInGroup ? 2 : 17},
-              ]
-            }>
-            <RichText
-              value={rt}
-              style={[
-                a.text_md,
-                isFromSelf && {color: t.palette.white},
-                isPending &&
-                  t.name !== 'light' && {color: t.palette.primary_300},
-              ]}
-              interactiveStyle={a.underline}
-              enableTags
-              emojiMultiplier={3}
-            />
+            style={[
+              a.flex_row,
+              a.gap_2xs,
+              a.py_xs,
+              a.px_xs,
+              a.justify_center,
+              isFromSelf ? a.justify_end : a.justify_start,
+              a.flex_wrap,
+              a.pb_xs,
+              t.atoms.bg_contrast_25,
+              a.border,
+              t.atoms.border_contrast_low,
+              a.rounded_lg,
+              t.atoms.shadow_sm,
+              {
+                // vibe coded number
+                transform: [{translateY: -11}],
+              },
+            ]}>
+            {message.reactions.map((reaction, _i, reactions) => {
+              let label
+              if (reaction.sender.did === currentAccount?.did) {
+                label = _(msg`You reacted ${reaction.value}`)
+              } else {
+                const senderDid = reaction.sender.did
+                const sender = convo.members.find(
+                  member => member.did === senderDid,
+                )
+                if (sender) {
+                  label = _(
+                    msg`${sanitizeDisplayName(
+                      sender.displayName || sender.handle,
+                    )} reacted ${reaction.value}`,
+                  )
+                } else {
+                  label = _(msg`Someone reacted ${reaction.value}`)
+                }
+              }
+              return (
+                <Animated.View
+                  entering={native(ZoomIn.springify(200).delay(400))}
+                  exiting={reactions.length > 1 && native(ZoomOut.delay(200))}
+                  layout={native(LinearTransition.delay(300))}
+                  key={reaction.sender.did + reaction.value}
+                  style={[a.p_2xs]}
+                  accessible={true}
+                  accessibilityLabel={label}
+                  accessibilityHint={_(
+                    msg`Double tap or long press the message to add a reaction`,
+                  )}>
+                  <Text emoji style={[a.text_sm]}>
+                    {reaction.value}
+                  </Text>
+                </Animated.View>
+              )
+            })}
           </View>
-        )}
-      </ActionsWrapper>
-
-      {isLastInGroup && (
-        <MessageItemMetadata
-          item={item}
-          style={isFromSelf ? a.text_right : a.text_left}
-        />
+        </View>
       )}
-    </View>
+    </LayoutAnimationConfig>
+  )
+
+  return (
+    <>
+      {isNewDay && <DateDivider date={message.sentAt} />}
+      <View
+        style={[
+          isFromSelf ? a.mr_md : a.ml_md,
+          nextIsMessage && !isNextFromSameSender && a.mb_md,
+        ]}>
+        <ActionsWrapper isFromSelf={isFromSelf} message={message}>
+          {AppBskyEmbedRecord.isView(message.embed) && (
+            <MessageItemEmbed embed={message.embed} />
+          )}
+          {rt.text.length > 0 && (
+            <View
+              style={
+                !isOnlyEmoji(message.text) && [
+                  a.py_sm,
+                  a.my_2xs,
+                  a.rounded_md,
+                  {
+                    paddingLeft: 14,
+                    paddingRight: 14,
+                    backgroundColor: isFromSelf
+                      ? isPending
+                        ? pendingColor
+                        : t.palette.primary_500
+                      : t.palette.contrast_50,
+                    borderRadius: 17,
+                  },
+                  isFromSelf ? a.self_end : a.self_start,
+                  isFromSelf
+                    ? {borderBottomRightRadius: needsTail ? 2 : 17}
+                    : {borderBottomLeftRadius: needsTail ? 2 : 17},
+                ]
+              }>
+              <RichText
+                value={rt}
+                style={[a.text_md, isFromSelf && {color: t.palette.white}]}
+                interactiveStyle={a.underline}
+                enableTags
+                emojiMultiplier={3}
+                shouldProxyLinks={true}
+              />
+            </View>
+          )}
+
+          {IS_NATIVE && appliedReactions}
+        </ActionsWrapper>
+
+        {!IS_NATIVE && appliedReactions}
+
+        {isLastInGroup && (
+          <MessageItemMetadata
+            item={item}
+            style={isFromSelf ? a.text_right : a.text_left}
+          />
+        )}
+      </View>
+    </>
   )
 }
 MessageItem = React.memo(MessageItem)
@@ -159,42 +259,23 @@ let MessageItemMetadata = ({
   )
 
   const relativeTimestamp = useCallback(
-    (timestamp: string) => {
+    (i18n: I18n, timestamp: string) => {
       const date = new Date(timestamp)
       const now = new Date()
 
-      const time = new Intl.DateTimeFormat(undefined, {
+      const time = i18n.date(date, {
         hour: 'numeric',
         minute: 'numeric',
-      }).format(date)
+      })
 
       const diff = now.getTime() - date.getTime()
 
-      // if under 1 minute
-      if (diff < 1000 * 60) {
+      // if under 30 seconds
+      if (diff < 1000 * 30) {
         return _(msg`Now`)
       }
 
-      // if in the last day
-      if (localDateString(now) === localDateString(date)) {
-        return time
-      }
-
-      // if yesterday
-      const yesterday = new Date(now)
-      yesterday.setDate(yesterday.getDate() - 1)
-
-      if (localDateString(yesterday) === localDateString(date)) {
-        return _(msg`Yesterday, ${time}`)
-      }
-
-      return new Intl.DateTimeFormat(undefined, {
-        hour: 'numeric',
-        minute: 'numeric',
-        day: 'numeric',
-        month: 'numeric',
-        year: 'numeric',
-      }).format(date)
+      return time
     },
     [_],
   )
@@ -247,15 +328,5 @@ let MessageItemMetadata = ({
     </Text>
   )
 }
-
 MessageItemMetadata = React.memo(MessageItemMetadata)
 export {MessageItemMetadata}
-
-function localDateString(date: Date) {
-  // can't use toISOString because it should be in local time
-  const mm = date.getMonth()
-  const dd = date.getDate()
-  const yyyy = date.getFullYear()
-  // not padding with 0s because it's not necessary, it's just used for comparison
-  return `${yyyy}-${mm}-${dd}`
-}

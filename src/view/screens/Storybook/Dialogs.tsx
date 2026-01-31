@@ -5,19 +5,24 @@ import {useDialogStateControlContext} from '#/state/dialogs'
 import {atoms as a} from '#/alf'
 import {Button, ButtonText} from '#/components/Button'
 import * as Dialog from '#/components/Dialog'
+import * as Menu from '#/components/Menu'
 import * as Prompt from '#/components/Prompt'
 import {H3, P, Text} from '#/components/Typography'
+import {PlatformInfo} from '../../../../modules/expo-bluesky-swiss-army'
 
 export function Dialogs() {
   const scrollable = Dialog.useDialogControl()
   const basic = Dialog.useDialogControl()
   const prompt = Prompt.usePromptControl()
+  const withMenu = Dialog.useDialogControl()
   const testDialog = Dialog.useDialogControl()
   const {closeAllDialogs} = useDialogStateControlContext()
   const unmountTestDialog = Dialog.useDialogControl()
+  const [reducedMotionEnabled, setReducedMotionEnabled] =
+    React.useState<boolean>()
   const [shouldRenderUnmountTest, setShouldRenderUnmountTest] =
     React.useState(false)
-  const unmountTestInterval = React.useRef<number>()
+  const unmountTestInterval = React.useRef<number>(undefined)
 
   const onUnmountTestStartPressWithClose = () => {
     setShouldRenderUnmountTest(true)
@@ -62,6 +67,7 @@ export function Dialogs() {
           scrollable.open()
           prompt.open()
           basic.open()
+          withMenu.open()
         }}
         label="Open basic dialog">
         <ButtonText>Open all dialogs</ButtonText>
@@ -87,6 +93,15 @@ export function Dialogs() {
         }}
         label="Open basic dialog">
         <ButtonText>Open basic dialog</ButtonText>
+      </Button>
+
+      <Button
+        variant="outline"
+        color="primary"
+        size="small"
+        onPress={() => withMenu.open()}
+        label="Open dialog with menu in it">
+        <ButtonText>Open dialog with menu in it</ButtonText>
       </Button>
 
       <Button
@@ -134,6 +149,22 @@ export function Dialogs() {
         <ButtonText>End Unmount Test</ButtonText>
       </Button>
 
+      <Button
+        variant="solid"
+        color="primary"
+        size="small"
+        onPress={() => {
+          const isReducedMotionEnabled =
+            PlatformInfo.getIsReducedMotionEnabled()
+          setReducedMotionEnabled(isReducedMotionEnabled)
+        }}
+        label="two">
+        <ButtonText>
+          Is reduced motion enabled?: (
+          {reducedMotionEnabled?.toString() || 'undefined'})
+        </ButtonText>
+      </Button>
+
       <Prompt.Outer control={prompt}>
         <Prompt.TitleText>This is a prompt</Prompt.TitleText>
         <Prompt.DescriptionText>
@@ -147,19 +178,44 @@ export function Dialogs() {
       </Prompt.Outer>
 
       <Dialog.Outer control={basic}>
-        <Dialog.Handle />
-
         <Dialog.Inner label="test">
           <H3 nativeID="dialog-title">Dialog</H3>
           <P nativeID="dialog-description">A basic dialog</P>
         </Dialog.Inner>
       </Dialog.Outer>
 
-      <Dialog.Outer
-        control={scrollable}
-        nativeOptions={{sheet: {snapPoints: ['100%']}}}>
-        <Dialog.Handle />
+      <Dialog.Outer control={withMenu}>
+        <Dialog.Inner label="test">
+          <H3 nativeID="dialog-title">Dialog with Menu</H3>
+          <Menu.Root>
+            <Menu.Trigger label="Open menu">
+              {({props}) => (
+                <Button
+                  style={a.mt_2xl}
+                  label="Open menu"
+                  color="primary"
+                  variant="solid"
+                  size="large"
+                  {...props}>
+                  <ButtonText>Open Menu</ButtonText>
+                </Button>
+              )}
+            </Menu.Trigger>
+            <Menu.Outer>
+              <Menu.Group>
+                <Menu.Item label="Item 1" onPress={() => console.log('item 1')}>
+                  <Menu.ItemText>Item 1</Menu.ItemText>
+                </Menu.Item>
+                <Menu.Item label="Item 2" onPress={() => console.log('item 2')}>
+                  <Menu.ItemText>Item 2</Menu.ItemText>
+                </Menu.Item>
+              </Menu.Group>
+            </Menu.Outer>
+          </Menu.Root>
+        </Dialog.Inner>
+      </Dialog.Outer>
 
+      <Dialog.Outer control={scrollable}>
         <Dialog.ScrollableInner
           accessibilityDescribedBy="dialog-description"
           accessibilityLabelledBy="dialog-title">
@@ -198,8 +254,6 @@ export function Dialogs() {
       </Dialog.Outer>
 
       <Dialog.Outer control={testDialog}>
-        <Dialog.Handle />
-
         <Dialog.ScrollableInner
           accessibilityDescribedBy="dialog-description"
           accessibilityLabelledBy="dialog-title">
@@ -324,8 +378,6 @@ export function Dialogs() {
 
       {shouldRenderUnmountTest && (
         <Dialog.Outer control={unmountTestDialog}>
-          <Dialog.Handle />
-
           <Dialog.Inner label="test">
             <H3 nativeID="dialog-title">Unmount Test Dialog</H3>
             <P nativeID="dialog-description">Will unmount in about 5 seconds</P>

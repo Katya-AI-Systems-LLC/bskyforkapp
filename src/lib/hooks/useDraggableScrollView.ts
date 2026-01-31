@@ -1,7 +1,8 @@
-import {useEffect, useRef, useMemo, ForwardedRef} from 'react'
-import {Platform, findNodeHandle} from 'react-native'
-import type {ScrollView} from 'react-native'
-import {mergeRefs} from 'lib/merge-refs'
+import {type ForwardedRef, useEffect, useMemo, useRef} from 'react'
+import {type ScrollView} from 'react-native'
+import {Platform} from 'react-native'
+
+import {mergeRefs} from '#/lib/merge-refs'
 
 type Props<Scrollable extends ScrollView = ScrollView> = {
   cursor?: string
@@ -18,10 +19,7 @@ export function useDraggableScroll<Scrollable extends ScrollView = ScrollView>({
     if (Platform.OS !== 'web' || !ref.current) {
       return
     }
-    const slider = findNodeHandle(ref.current) as unknown as HTMLDivElement
-    if (!slider) {
-      return
-    }
+    const slider = ref.current as unknown as HTMLDivElement
     let isDragging = false
     let isMouseDown = false
     let startX = 0
@@ -60,6 +58,9 @@ export function useDraggableScroll<Scrollable extends ScrollView = ScrollView>({
       e.preventDefault()
       const walk = x - startX
       slider.scrollLeft = scrollLeft - walk
+
+      if (slider.contains(document.activeElement))
+        (document.activeElement as HTMLElement)?.blur?.()
     }
 
     slider.addEventListener('mousedown', mouseDown)

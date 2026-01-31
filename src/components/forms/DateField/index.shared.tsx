@@ -1,12 +1,11 @@
-import React from 'react'
 import {Pressable, View} from 'react-native'
+import {useLingui} from '@lingui/react'
 
-import {android, atoms as a, useTheme, web} from '#/alf'
+import {atoms as a, native, useTheme, web} from '#/alf'
 import * as TextField from '#/components/forms/TextField'
 import {useInteractionState} from '#/components/hooks/useInteractionState'
 import {CalendarDays_Stroke2_Corner0_Rounded as CalendarDays} from '#/components/icons/CalendarDays'
 import {Text} from '#/components/Typography'
-import {localizeDate} from './utils'
 
 // looks like a TextField.Input, but is just a button. It'll do something different on each platform on press
 // iOS: open a dialog with an inline date picker
@@ -20,11 +19,12 @@ export function DateFieldButton({
   accessibilityHint,
 }: {
   label: string
-  value: string
+  value: string | Date
   onPress: () => void
   isInvalid?: boolean
   accessibilityHint?: string
 }) {
+  const {i18n} = useLingui()
   const t = useTheme()
 
   const {
@@ -60,21 +60,21 @@ export function DateFieldButton({
         onBlur={onBlur}
         style={[
           {
-            paddingTop: 12,
-            paddingBottom: 12,
             paddingLeft: 14,
             paddingRight: 14,
             borderColor: 'transparent',
             borderWidth: 2,
           },
-          android({
-            minHeight: 57.5,
+          native({
+            paddingTop: 10,
+            paddingBottom: 10,
           }),
+          web(a.py_md),
           a.flex_row,
           a.flex_1,
           a.w_full,
-          a.rounded_sm,
-          t.atoms.bg_contrast_25,
+          {borderRadius: 10},
+          t.atoms.bg_contrast_50,
           a.align_center,
           hovered ? chromeHover : {},
           focused || pressed ? chromeFocus : {},
@@ -91,7 +91,7 @@ export function DateFieldButton({
             t.atoms.text,
             {lineHeight: a.text_md.fontSize * 1.1875},
           ]}>
-          {localizeDate(value)}
+          {i18n.date(value, {timeZone: 'UTC'})}
         </Text>
       </Pressable>
     </View>

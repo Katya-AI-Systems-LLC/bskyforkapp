@@ -1,19 +1,25 @@
 import React from 'react'
-import {AppBskyFeedGetLikes as GetLikes} from '@atproto/api'
+import {type AppBskyFeedGetLikes as GetLikes} from '@atproto/api'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
+import {useInitialNumToRender} from '#/lib/hooks/useInitialNumToRender'
+import {cleanError} from '#/lib/strings/errors'
 import {logger} from '#/logger'
 import {useLikedByQuery} from '#/state/queries/post-liked-by'
 import {useResolveUriQuery} from '#/state/queries/resolve-uri'
-import {useInitialNumToRender} from 'lib/hooks/useInitialNumToRender'
-import {cleanError} from 'lib/strings/errors'
 import {ProfileCardWithFollowBtn} from '#/view/com/profile/ProfileCard'
 import {List} from '#/view/com/util/List'
 import {ListFooter, ListMaybePlaceholder} from '#/components/Lists'
 
-function renderItem({item}: {item: GetLikes.Like}) {
-  return <ProfileCardWithFollowBtn key={item.actor.did} profile={item.actor} />
+function renderItem({item, index}: {item: GetLikes.Like; index: number}) {
+  return (
+    <ProfileCardWithFollowBtn
+      key={item.actor.did}
+      profile={item.actor}
+      noBorder={index === 0}
+    />
+  )
 }
 
 function keyExtractor(item: GetLikes.Like) {
@@ -75,11 +81,14 @@ export function LikedByList({uri}: {uri: string}) {
         isLoading={isUriLoading || isLikedByLoading}
         isError={isError}
         emptyType="results"
+        emptyTitle={_(msg`No likes yet`)}
         emptyMessage={_(
           msg`Nobody has liked this yet. Maybe you should be the first!`,
         )}
         errorMessage={cleanError(resolveError || error)}
         onRetry={isError ? refetch : undefined}
+        topBorder={false}
+        sideBorders={false}
       />
     )
   }
@@ -102,6 +111,7 @@ export function LikedByList({uri}: {uri: string}) {
       onEndReachedThreshold={3}
       initialNumToRender={initialNumToRender}
       windowSize={11}
+      sideBorders={false}
     />
   )
 }

@@ -1,12 +1,15 @@
 import {
-  AppBskyFeedDefs,
-  AppBskyFeedGetFeed as GetCustomFeed,
-  AtpAgent,
+  type AppBskyFeedDefs,
+  type AppBskyFeedGetFeed as GetCustomFeed,
   BskyAgent,
+  jsonStringToLex,
 } from '@atproto/api'
 
-import {getContentLanguages} from '#/state/preferences/languages'
-import {FeedAPI, FeedAPIResponse} from './types'
+import {
+  getAppLanguageAsContentLanguage,
+  getContentLanguages,
+} from '#/state/preferences/languages'
+import {type FeedAPI, type FeedAPIResponse} from './types'
 import {createBskyTopicsHeader, isBlueskyOwnedFeed} from './utils'
 
 export class CustomFeedAPI implements FeedAPI {
@@ -51,7 +54,7 @@ export class CustomFeedAPI implements FeedAPI {
     const agent = this.agent
     const isBlueskyOwned = isBlueskyOwnedFeed(this.params.feed)
 
-    const res = agent.session
+    const res = agent.did
       ? await this.agent.app.bsky.feed.getFeed(
           {
             ...this.params,
@@ -103,37 +106,52 @@ async function loggedOutFetch({
   limit: number
   cursor?: string
 }) {
-  let contentLangs = getContentLanguages().join(',')
+  let contentLangs = getAppLanguageAsContentLanguage()
+
+  /**
+   * Copied from our root `Agent` class
+   * @see https://github.com/bluesky-social/atproto/blob/60df3fc652b00cdff71dd9235d98a7a4bb828f05/packages/api/src/agent.ts#L120
+   */
+  const labelersHeader = {
+    'atproto-accept-labelers': BskyAgent.appLabelers
+      .map(l => `${l};redact`)
+      .join(', '),
+  }
 
   // manually construct fetch call so we can add the `lang` cache-busting param
-  let res = await AtpAgent.fetch!(
+  let res = await fetch(
     `https://api.bsky.app/xrpc/app.bsky.feed.getFeed?feed=${feed}${
       cursor ? `&cursor=${cursor}` : ''
     }&limit=${limit}&lang=${contentLangs}`,
-    'GET',
-    {'Accept-Language': contentLangs},
-    undefined,
+    {
+      method: 'GET',
+      headers: {'Accept-Language': contentLangs, ...labelersHeader},
+    },
   )
-  if (res.body?.feed?.length) {
+  let data = res.ok
+    ? (jsonStringToLex(await res.text()) as GetCustomFeed.OutputSchema)
+    : null
+  if (data?.feed?.length) {
     return {
       success: true,
-      data: res.body,
+      data,
     }
   }
 
   // no data, try again with language headers removed
-  res = await AtpAgent.fetch!(
+  res = await fetch(
     `https://api.bsky.app/xrpc/app.bsky.feed.getFeed?feed=${feed}${
       cursor ? `&cursor=${cursor}` : ''
     }&limit=${limit}`,
-    'GET',
-    {'Accept-Language': ''},
-    undefined,
+    {method: 'GET', headers: {'Accept-Language': '', ...labelersHeader}},
   )
-  if (res.body?.feed?.length) {
+  data = res.ok
+    ? (jsonStringToLex(await res.text()) as GetCustomFeed.OutputSchema)
+    : null
+  if (data?.feed?.length) {
     return {
       success: true,
-      data: res.body,
+      data,
     }
   }
 

@@ -3,26 +3,31 @@ appId: xyz.blueskyweb.app
 - runScript:
     file: ../setupServer.js
     env:
-        SERVER_PATH: ?users
+      SERVER_PATH: ?users
 - runFlow:
     file: ../setupApp.yml
 - tapOn:
     id: "e2eSignInAlice"
+- extendedWaitUntil:
+    visible:
+      id: "viewHeaderHomeFeedPrefsBtn"
 
 # Post an image with the porn label
+- assertVisible:
+    id: "composeFAB"
 - tapOn:
     id: "composeFAB"
 - inputText: "Post with an image"
 - tapOn:
-    id: "openGalleryBtn"
-- tapOn:
-    id: "labelsBtn"
-- tapOn:
-    label: "Tap on porn"
-    point: 78%,67%
+    id: "openMediaBtn"
+- extendedWaitUntil:
+    visible:
+      id: "selectedPhotosView"
+- tapOn: "Content warnings"
+- tapOn: "Porn"
 - tapOn:
     label: "Tap on confirm"
-    point: 51%,92%
+    id: "confirmBtn"
 - tapOn:
     id: "composerPublishBtn"
 - tapOn:

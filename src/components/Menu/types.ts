@@ -1,19 +1,25 @@
-import React from 'react'
 import {
-  GestureResponderEvent,
-  PressableProps,
-  AccessibilityProps,
+  type AccessibilityProps,
+  type AccessibilityRole,
+  type GestureResponderEvent,
+  type PressableProps,
 } from 'react-native'
+import type React from 'react'
 
-import {Props as SVGIconProps} from '#/components/icons/common'
-import * as Dialog from '#/components/Dialog'
-import {TextStyleProp, ViewStyleProp} from '#/alf'
+import {type TextStyleProp, type ViewStyleProp} from '#/alf'
+import type * as Dialog from '#/components/Dialog'
+import {type Props as SVGIconProps} from '#/components/icons/common'
 
 export type ContextType = {
   control: Dialog.DialogOuterProps['control']
 }
 
+export type ItemContextType = {
+  disabled: boolean
+}
+
 export type RadixPassThroughTriggerProps = {
+  ref: React.RefObject<any>
   id: string
   type: 'button'
   disabled: boolean
@@ -32,10 +38,12 @@ export type RadixPassThroughTriggerProps = {
 export type TriggerProps = {
   children(props: TriggerChildProps): React.ReactNode
   label: string
+  hint?: string
+  role?: AccessibilityRole
 }
 export type TriggerChildProps =
   | {
-      isNative: true
+      IS_NATIVE: true
       control: Dialog.DialogOuterProps['control']
       state: {
         /**
@@ -53,16 +61,19 @@ export type TriggerChildProps =
        * object is empty.
        */
       props: {
+        ref: null
         onPress: () => void
         onFocus: () => void
         onBlur: () => void
         onPressIn: () => void
         onPressOut: () => void
+        accessibilityHint?: string
         accessibilityLabel: string
+        accessibilityRole: AccessibilityRole
       }
     }
   | {
-      isNative: false
+      IS_NATIVE: false
       control: Dialog.DialogOuterProps['control']
       state: {
         hovered: boolean
@@ -78,7 +89,9 @@ export type TriggerChildProps =
         onBlur: () => void
         onMouseEnter: () => void
         onMouseLeave: () => void
+        accessibilityHint?: string
         accessibilityLabel: string
+        accessibilityRole: AccessibilityRole
       }
     }
 
@@ -94,6 +107,7 @@ export type ItemTextProps = React.PropsWithChildren<TextStyleProp & {}>
 export type ItemIconProps = React.PropsWithChildren<{
   icon: React.ComponentType<SVGIconProps>
   position?: 'left' | 'right'
+  fill?: (props: {disabled: boolean}) => string
 }>
 
 export type GroupProps = React.PropsWithChildren<ViewStyleProp & {}>

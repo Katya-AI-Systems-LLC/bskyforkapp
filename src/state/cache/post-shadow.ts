@@ -1,20 +1,31 @@
 import {useEffect, useMemo, useState} from 'react'
-import {AppBskyFeedDefs} from '@atproto/api'
-import {QueryClient} from '@tanstack/react-query'
+import {
+  AppBskyEmbedRecord,
+  AppBskyEmbedRecordWithMedia,
+  type AppBskyFeedDefs,
+} from '@atproto/api'
+import {type QueryClient} from '@tanstack/react-query'
 import EventEmitter from 'eventemitter3'
 
 import {batchedUpdates} from '#/lib/batchedUpdates'
-import {findAllPostsInQueryData as findAllPostsInNotifsQueryData} from '../queries/notifications/feed'
-import {findAllPostsInQueryData as findAllPostsInFeedQueryData} from '../queries/post-feed'
-import {findAllPostsInQueryData as findAllPostsInThreadQueryData} from '../queries/post-thread'
-import {findAllPostsInQueryData as findAllPostsInSearchQueryData} from '../queries/search-posts'
-import {castAsShadow, Shadow} from './types'
+import {findAllPostsInQueryData as findAllPostsInBookmarksQueryData} from '#/state/queries/bookmarks/useBookmarksQuery'
+import {findAllPostsInQueryData as findAllPostsInExploreFeedPreviewsQueryData} from '#/state/queries/explore-feed-previews'
+import {findAllPostsInQueryData as findAllPostsInNotifsQueryData} from '#/state/queries/notifications/feed'
+import {findAllPostsInQueryData as findAllPostsInFeedQueryData} from '#/state/queries/post-feed'
+import {findAllPostsInQueryData as findAllPostsInQuoteQueryData} from '#/state/queries/post-quotes'
+import {findAllPostsInQueryData as findAllPostsInSearchQueryData} from '#/state/queries/search-posts'
+import {findAllPostsInQueryData as findAllPostsInThreadV2QueryData} from '#/state/queries/usePostThread/queryCache'
+import {castAsShadow, type Shadow} from './types'
 export type {Shadow} from './types'
 
 export interface PostShadow {
   likeUri: string | undefined
   repostUri: string | undefined
   isDeleted: boolean
+  embed: AppBskyEmbedRecord.View | AppBskyEmbedRecordWithMedia.View | undefined
+  pinned: boolean
+  optimisticReplyCount: number | undefined
+  bookmarked: boolean | undefined
 }
 
 export const POST_TOMBSTONE = Symbol('PostTombstone')
@@ -24,6 +35,14 @@ const shadows: WeakMap<
   AppBskyFeedDefs.PostView,
   Partial<PostShadow>
 > = new WeakMap()
+
+/**
+ * Use with caution! This function returns the raw shadow data for a post.
+ * Prefer using `usePostShadow`.
+ */
+export function dangerousGetPostShadow(post: AppBskyFeedDefs.PostView) {
+  return shadows.get(post)
+}
 
 export function usePostShadow(
   post: AppBskyFeedDefs.PostView,
@@ -74,6 +93,18 @@ function mergeShadow(
     likeCount = Math.max(0, likeCount)
   }
 
+  let bookmarkCount = post.bookmarkCount ?? 0
+  if ('bookmarked' in shadow) {
+    const wasBookmarked = !!post.viewer?.bookmarked
+    const isBookmarked = !!shadow.bookmarked
+    if (wasBookmarked && !isBookmarked) {
+      bookmarkCount--
+    } else if (!wasBookmarked && isBookmarked) {
+      bookmarkCount++
+    }
+    bookmarkCount = Math.max(0, bookmarkCount)
+  }
+
   let repostCount = post.repostCount ?? 0
   if ('repostUri' in shadow) {
     const wasReposted = !!post.viewer?.repost
@@ -86,14 +117,37 @@ function mergeShadow(
     repostCount = Math.max(0, repostCount)
   }
 
+  let replyCount = post.replyCount ?? 0
+  if ('optimisticReplyCount' in shadow) {
+    replyCount = shadow.optimisticReplyCount ?? replyCount
+  }
+
+  let embed: typeof post.embed
+  if ('embed' in shadow) {
+    if (
+      (AppBskyEmbedRecord.isView(post.embed) &&
+        AppBskyEmbedRecord.isView(shadow.embed)) ||
+      (AppBskyEmbedRecordWithMedia.isView(post.embed) &&
+        AppBskyEmbedRecordWithMedia.isView(shadow.embed))
+    ) {
+      embed = shadow.embed
+    }
+  }
+
   return castAsShadow({
     ...post,
+    embed: embed || post.embed,
     likeCount: likeCount,
     repostCount: repostCount,
+    replyCount: replyCount,
+    bookmarkCount: bookmarkCount,
     viewer: {
       ...(post.viewer || {}),
       like: 'likeUri' in shadow ? shadow.likeUri : post.viewer?.like,
       repost: 'repostUri' in shadow ? shadow.repostUri : post.viewer?.repost,
+      pinned: 'pinned' in shadow ? shadow.pinned : post.viewer?.pinned,
+      bookmarked:
+        'bookmarked' in shadow ? shadow.bookmarked : post.viewer?.bookmarked,
     },
   })
 }
@@ -122,12 +176,22 @@ function* findPostsInCache(
   for (let post of findAllPostsInNotifsQueryData(queryClient, uri)) {
     yield post
   }
-  for (let node of findAllPostsInThreadQueryData(queryClient, uri)) {
-    if (node.type === 'post') {
-      yield node.post
-    }
+  for (let post of findAllPostsInThreadV2QueryData(queryClient, uri)) {
+    yield post
   }
   for (let post of findAllPostsInSearchQueryData(queryClient, uri)) {
+    yield post
+  }
+  for (let post of findAllPostsInQuoteQueryData(queryClient, uri)) {
+    yield post
+  }
+  for (let post of findAllPostsInExploreFeedPreviewsQueryData(
+    queryClient,
+    uri,
+  )) {
+    yield post
+  }
+  for (let post of findAllPostsInBookmarksQueryData(queryClient, uri)) {
     yield post
   }
 }

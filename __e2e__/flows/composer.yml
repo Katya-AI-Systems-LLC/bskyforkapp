@@ -3,11 +3,17 @@ appId: xyz.blueskyweb.app
 - runScript:
     file: ../setupServer.js
     env:
-        SERVER_PATH: ?users
+      SERVER_PATH: ?users
 - runFlow:
     file: ../setupApp.yml
 - tapOn:
     id: "e2eSignInAlice"
+- extendedWaitUntil:
+    visible:
+      id: "viewHeaderHomeFeedPrefsBtn"
+
+- assertVisible:
+    id: "composeFAB"
 - tapOn:
     id: "composeFAB"
 - inputText: "Post text only"
@@ -19,7 +25,10 @@ appId: xyz.blueskyweb.app
     id: "composeFAB"
 - inputText: "Post with an image"
 - tapOn:
-    id: "openGalleryBtn"
+    id: "openMediaBtn"
+- extendedWaitUntil:
+    visible:
+      id: "selectedPhotosView"
 - tapOn:
     id: "composerPublishBtn"
 - assertVisible:
@@ -44,7 +53,10 @@ appId: xyz.blueskyweb.app
     id: "replyBtn"
 - inputText: "Reply with an image"
 - tapOn:
-    id: "openGalleryBtn"
+    id: "openMediaBtn"
+- extendedWaitUntil:
+    visible:
+      id: "selectedPhotosView"
 - tapOn:
     id: "composerPublishBtn"
 - assertVisible:
@@ -60,7 +72,7 @@ appId: xyz.blueskyweb.app
     id: "repostBtn"
 - tapOn:
     id: "quoteBtn"
-- inputText: "QP text only"   
+- inputText: "QP text only"
 - tapOn:
     id: "composerPublishBtn"
 - assertVisible:
@@ -71,7 +83,10 @@ appId: xyz.blueskyweb.app
     id: "quoteBtn"
 - inputText: "QP with an image"
 - tapOn:
-    id: "openGalleryBtn"
+    id: "openMediaBtn"
+- extendedWaitUntil:
+    visible:
+      id: "selectedPhotosView"
 - tapOn:
     id: "composerPublishBtn"
 - assertVisible:

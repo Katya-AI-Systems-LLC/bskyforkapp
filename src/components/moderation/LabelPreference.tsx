@@ -1,6 +1,8 @@
-import React from 'react'
 import {View} from 'react-native'
-import {InterpretedLabelValueDefinition, LabelPreference} from '@atproto/api'
+import {
+  type InterpretedLabelValueDefinition,
+  type LabelPreference,
+} from '@atproto/api'
 import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
@@ -22,7 +24,7 @@ export function Outer({children}: React.PropsWithChildren<{}>) {
     <View
       style={[
         a.flex_row,
-        a.gap_md,
+        a.gap_sm,
         a.px_lg,
         a.py_lg,
         a.justify_between,
@@ -46,8 +48,10 @@ export function Content({
 
   return (
     <View style={[a.gap_xs, a.flex_1]}>
-      <Text style={[a.font_bold, gtPhone ? a.text_sm : a.text_md]}>{name}</Text>
-      <Text style={[t.atoms.text_contrast_medium, a.leading_snug]}>
+      <Text emoji style={[a.font_semi_bold, gtPhone ? a.text_sm : a.text_md]}>
+        {name}
+      </Text>
+      <Text emoji style={[t.atoms.text_contrast_medium, a.leading_snug]}>
         {description}
       </Text>
 
@@ -63,6 +67,7 @@ export function Buttons({
   ignoreLabel,
   warnLabel,
   hideLabel,
+  disabled,
 }: {
   name: string
   values: ToggleButton.GroupProps['values']
@@ -70,13 +75,14 @@ export function Buttons({
   ignoreLabel?: string
   warnLabel?: string
   hideLabel?: string
+  disabled?: boolean
 }) {
   const {_} = useLingui()
-  const {gtPhone} = useBreakpoints()
 
   return (
-    <View style={[{minHeight: 35}, gtPhone ? undefined : a.w_full]}>
+    <View style={[{minHeight: 35}, a.w_full]}>
       <ToggleButton.Group
+        disabled={disabled}
         label={_(
           msg`Configure content filtering setting for category: ${name}`,
         )}
@@ -142,22 +148,21 @@ export function GlobalLabelPreference({
         name={labelStrings.name}
         description={labelStrings.description}
       />
-      {!disabled && (
-        <Buttons
-          name={labelStrings.name.toLowerCase()}
-          values={[pref]}
-          onChange={values => {
-            mutate({
-              label: identifier,
-              visibility: values[0] as LabelPreference,
-              labelerDid: undefined,
-            })
-          }}
-          ignoreLabel={labelOptions.ignore}
-          warnLabel={labelOptions.warn}
-          hideLabel={labelOptions.hide}
-        />
-      )}
+      <Buttons
+        name={labelStrings.name.toLowerCase()}
+        values={[pref]}
+        onChange={values => {
+          mutate({
+            label: identifier,
+            visibility: values[0] as LabelPreference,
+            labelerDid: undefined,
+          })
+        }}
+        ignoreLabel={labelOptions.ignore}
+        warnLabel={labelOptions.warn}
+        hideLabel={labelOptions.hide}
+        disabled={disabled}
+      />
     </Outer>
   )
 }
@@ -174,7 +179,7 @@ export function LabelerLabelPreference({
   disabled?: boolean
   labelerDid?: string
 }) {
-  const {i18n} = useLingui()
+  const {_, i18n} = useLingui()
   const t = useTheme()
   const {gtPhone} = useBreakpoints()
 
@@ -237,13 +242,20 @@ export function LabelerLabelPreference({
             <CircleInfo size="sm" fill={t.atoms.text_contrast_high.color} />
 
             <Text
-              style={[t.atoms.text_contrast_medium, a.font_semibold, a.italic]}>
+              style={[
+                t.atoms.text_contrast_medium,
+                a.font_semi_bold,
+                a.italic,
+              ]}>
               {adultDisabled ? (
                 <Trans>Adult content is disabled.</Trans>
               ) : isGlobalLabel ? (
                 <Trans>
                   Configured in{' '}
-                  <InlineLinkText to="/moderation" style={a.text_sm}>
+                  <InlineLinkText
+                    label={_(msg`moderation settings`)}
+                    to="/moderation"
+                    style={a.text_sm}>
                     moderation settings
                   </InlineLinkText>
                   .
@@ -255,7 +267,7 @@ export function LabelerLabelPreference({
       </Content>
 
       {showConfig && (
-        <View style={[gtPhone ? undefined : a.w_full]}>
+        <>
           {cantConfigure ? (
             <View
               style={[
@@ -265,8 +277,9 @@ export function LabelerLabelPreference({
                 a.rounded_sm,
                 a.border,
                 t.atoms.border_contrast_low,
+                a.self_start,
               ]}>
-              <Text style={[a.font_bold, t.atoms.text_contrast_low]}>
+              <Text emoji style={[a.font_semi_bold, t.atoms.text_contrast_low]}>
                 {currentPrefLabel}
               </Text>
             </View>
@@ -286,7 +299,7 @@ export function LabelerLabelPreference({
               hideLabel={hideLabel}
             />
           )}
-        </View>
+        </>
       )}
     </Outer>
   )

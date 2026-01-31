@@ -1,12 +1,21 @@
-import React from 'react'
-import {StyleProp, StyleSheet, TextStyle, View, ViewStyle} from 'react-native'
-import {Text} from '../text/Text'
-import {Button, ButtonType} from './Button'
-import {useTheme} from 'lib/ThemeContext'
-import {choose} from 'lib/functions'
-import {colors} from 'lib/styles'
-import {TypographyVariant} from 'lib/ThemeContext'
+import {
+  type StyleProp,
+  StyleSheet,
+  type TextStyle,
+  View,
+  type ViewStyle,
+} from 'react-native'
 
+import {choose} from '#/lib/functions'
+import {colors} from '#/lib/styles'
+import {useTheme} from '#/lib/ThemeContext'
+import {type TypographyVariant} from '#/lib/ThemeContext'
+import {Text} from '../text/Text'
+import {Button, type ButtonType} from './Button'
+
+/**
+ * @deprecated use Toggle from `#/components/form/Toggle.tsx` instead
+ */
 export function ToggleButton({
   testID,
   type = 'default-light',
@@ -100,39 +109,39 @@ export function ToggleButton({
   const labelStyle = choose<TextStyle, Record<ButtonType, TextStyle>>(type, {
     primary: {
       color: theme.palette.primary.text,
-      fontWeight: theme.palette.primary.isLowContrast ? '500' : undefined,
+      fontWeight: theme.palette.primary.isLowContrast ? '600' : undefined,
     },
     secondary: {
       color: theme.palette.secondary.text,
-      fontWeight: theme.palette.secondary.isLowContrast ? '500' : undefined,
+      fontWeight: theme.palette.secondary.isLowContrast ? '600' : undefined,
     },
     inverted: {
       color: theme.palette.inverted.text,
-      fontWeight: theme.palette.inverted.isLowContrast ? '500' : undefined,
+      fontWeight: theme.palette.inverted.isLowContrast ? '600' : undefined,
     },
     'primary-outline': {
       color: theme.palette.primary.textInverted,
-      fontWeight: theme.palette.primary.isLowContrast ? '500' : undefined,
+      fontWeight: theme.palette.primary.isLowContrast ? '600' : undefined,
     },
     'secondary-outline': {
       color: theme.palette.secondary.textInverted,
-      fontWeight: theme.palette.secondary.isLowContrast ? '500' : undefined,
+      fontWeight: theme.palette.secondary.isLowContrast ? '600' : undefined,
     },
     'primary-light': {
       color: theme.palette.primary.textInverted,
-      fontWeight: theme.palette.primary.isLowContrast ? '500' : undefined,
+      fontWeight: theme.palette.primary.isLowContrast ? '600' : undefined,
     },
     'secondary-light': {
       color: theme.palette.secondary.textInverted,
-      fontWeight: theme.palette.secondary.isLowContrast ? '500' : undefined,
+      fontWeight: theme.palette.secondary.isLowContrast ? '600' : undefined,
     },
     default: {
       color: theme.palette.default.text,
-      fontWeight: theme.palette.default.isLowContrast ? '500' : undefined,
+      fontWeight: theme.palette.default.isLowContrast ? '600' : undefined,
     },
     'default-light': {
       color: theme.palette.default.text,
-      fontWeight: theme.palette.default.isLowContrast ? '500' : undefined,
+      fontWeight: theme.palette.default.isLowContrast ? '600' : undefined,
     },
   })
   return (

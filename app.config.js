@@ -1,28 +1,11 @@
+// @ts-check
 const pkg = require('./package.json')
 
-const SPLASH_CONFIG = {
-  backgroundColor: '#ffffff',
-  image: './assets/splash.png',
-  resizeMode: 'cover',
-}
-const DARK_SPLASH_CONFIG = {
-  backgroundColor: '#001429',
-  image: './assets/splash-dark.png',
-  resizeMode: 'cover',
-}
-
-const SPLASH_CONFIG_ANDROID = {
-  backgroundColor: '#0c7cff',
-  image: './assets/splash.png',
-  resizeMode: 'cover',
-}
-const DARK_SPLASH_CONFIG_ANDROID = {
-  backgroundColor: '#0f141b',
-  image: './assets/splash-dark.png',
-  resizeMode: 'cover',
-}
-
-module.exports = function (config) {
+/**
+ * @param {import('@expo/config-types').ExpoConfig} _config
+ * @returns {{ expo: import('@expo/config-types').ExpoConfig }}
+ */
+module.exports = function (_config) {
   /**
    * App version number. Should be incremented as part of a release cycle.
    */
@@ -33,11 +16,11 @@ module.exports = function (config) {
    *
    * @see https://docs.expo.dev/build-reference/variables/#built-in-environment-variables
    */
-  const PLATFORM = process.env.EAS_BUILD_PLATFORM
+  const PLATFORM = process.env.EAS_BUILD_PLATFORM ?? 'web'
 
-  const IS_DEV = process.env.EXPO_PUBLIC_ENV === 'development'
   const IS_TESTFLIGHT = process.env.EXPO_PUBLIC_ENV === 'testflight'
   const IS_PRODUCTION = process.env.EXPO_PUBLIC_ENV === 'production'
+  const IS_DEV = !IS_TESTFLIGHT && !IS_PRODUCTION
 
   const ASSOCIATED_DOMAINS = [
     'applinks:bsky.app',
@@ -48,39 +31,34 @@ module.exports = function (config) {
     ...(IS_DEV || IS_TESTFLIGHT ? [] : []),
   ]
 
-  const UPDATES_CHANNEL = IS_TESTFLIGHT
-    ? 'testflight'
-    : IS_PRODUCTION
-    ? 'production'
-    : undefined
-  const UPDATES_ENABLED = !!UPDATES_CHANNEL
+  const UPDATES_ENABLED = IS_TESTFLIGHT || IS_PRODUCTION
 
-  const SENTRY_DIST = `${PLATFORM}.${VERSION}.${IS_TESTFLIGHT ? 'tf' : ''}${
-    IS_DEV ? 'dev' : ''
-  }`
+  const USE_SENTRY = Boolean(process.env.SENTRY_AUTH_TOKEN)
 
   return {
     expo: {
       version: VERSION,
-      name: 'Bluesky',
-      slug: 'bluesky',
-      scheme: 'bluesky',
-      owner: 'blueskysocial',
+      name: 'SkyConnect',
+      slug: 'skyconnect',
+      scheme: 'skyconnect',
+      owner: 'skyconnectteam',
       runtimeVersion: {
         policy: 'appVersion',
       },
-      orientation: 'portrait',
-      icon: './assets/icon.png',
+      icon: './assets/app-icons/ios_icon_skyconnect.png',
       userInterfaceStyle: 'automatic',
-      splash: SPLASH_CONFIG,
-      // hsl(211, 99%, 53%), same as palette.default.brandText
-      primaryColor: '#1083fe',
+      primaryColor: '#0066FF',
+      newArchEnabled: false,
       ios: {
         supportsTablet: false,
-        bundleIdentifier: 'xyz.blueskyweb.app',
+        bundleIdentifier: 'app.skyconnect',
         config: {
           usesNonExemptEncryption: false,
         },
+        icon:
+          PLATFORM === 'web' // web build doesn't like .icon files
+            ? './assets/app-icons/ios_icon_skyconnect.png'
+            : './assets/app-icons/ios_icon_skyconnect.icon',
         infoPlist: {
           UIBackgroundModes: ['remote-notification'],
           NSCameraUsageDescription:
@@ -91,16 +69,87 @@ module.exports = function (config) {
             'Used to save images to your library.',
           NSPhotoLibraryUsageDescription:
             'Used for profile pictures, posts, and other kinds of content',
+          CFBundleSpokenName: 'Sky Connect',
+          CFBundleLocalizations: [
+            'en',
+            'an',
+            'ast',
+            'ca',
+            'cy',
+            'da',
+            'de',
+            'el',
+            'eo',
+            'es',
+            'eu',
+            'fi',
+            'fr',
+            'fy',
+            'ga',
+            'gd',
+            'gl',
+            'hi',
+            'hu',
+            'ia',
+            'id',
+            'it',
+            'ja',
+            'km',
+            'ko',
+            'ne',
+            'nl',
+            'pl',
+            'pt-BR',
+            'pt-PT',
+            'ro',
+            'ru',
+            'sv',
+            'th',
+            'tr',
+            'uk',
+            'vi',
+            'yue',
+            'zh-Hans',
+            'zh-Hant',
+          ],
+          UIDesignRequiresCompatibility: true,
         },
         associatedDomains: ASSOCIATED_DOMAINS,
-        splash: {
-          ...SPLASH_CONFIG,
-          dark: DARK_SPLASH_CONFIG,
-        },
         entitlements: {
-          'com.apple.security.application-groups': 'group.app.bsky',
+          'com.apple.developer.kernel.increased-memory-limit': true,
+          'com.apple.developer.kernel.extended-virtual-addressing': true,
+          'com.apple.security.application-groups': 'group.app.skyconnect',
+          // 'com.apple.developer.device-information.user-assigned-device-name': true,
         },
         privacyManifests: {
+          NSPrivacyCollectedDataTypes: [
+            {
+              NSPrivacyCollectedDataType: 'NSPrivacyCollectedDataTypeCrashData',
+              NSPrivacyCollectedDataTypeLinked: false,
+              NSPrivacyCollectedDataTypeTracking: false,
+              NSPrivacyCollectedDataTypePurposes: [
+                'NSPrivacyCollectedDataTypePurposeAppFunctionality',
+              ],
+            },
+            {
+              NSPrivacyCollectedDataType:
+                'NSPrivacyCollectedDataTypePerformanceData',
+              NSPrivacyCollectedDataTypeLinked: false,
+              NSPrivacyCollectedDataTypeTracking: false,
+              NSPrivacyCollectedDataTypePurposes: [
+                'NSPrivacyCollectedDataTypePurposeAppFunctionality',
+              ],
+            },
+            {
+              NSPrivacyCollectedDataType:
+                'NSPrivacyCollectedDataTypeOtherDiagnosticData',
+              NSPrivacyCollectedDataTypeLinked: false,
+              NSPrivacyCollectedDataTypeTracking: false,
+              NSPrivacyCollectedDataTypePurposes: [
+                'NSPrivacyCollectedDataTypePurposeAppFunctionality',
+              ],
+            },
+          ],
           NSPrivacyAccessedAPITypes: [
             {
               NSPrivacyAccessedAPIType:
@@ -126,23 +175,20 @@ module.exports = function (config) {
       },
       androidStatusBar: {
         barStyle: 'light-content',
-        backgroundColor: '#00000000',
       },
       // Dark nav bar in light mode is better than light nav bar in dark mode
       androidNavigationBar: {
         barStyle: 'light-content',
-        backgroundColor: DARK_SPLASH_CONFIG_ANDROID.backgroundColor,
       },
       android: {
-        icon: './assets/icon.png',
+        icon: './assets/app-icons/android_icon_skyconnect.png',
         adaptiveIcon: {
-          foregroundImage: './assets/icon-android-foreground.png',
-          monochromeImage: './assets/icon-android-foreground.png',
-          backgroundImage: './assets/icon-android-background.png',
-          backgroundColor: '#1185FE',
+          foregroundImage: './assets/icon-skyconnect-foreground.png',
+          monochromeImage: './assets/icon-android-monochrome.png',
+          backgroundColor: '#0066FF',
         },
         googleServicesFile: './google-services.json',
-        package: 'xyz.blueskyweb.app',
+        package: 'app.skyconnect',
         intentFilters: [
           {
             action: 'VIEW',
@@ -152,24 +198,24 @@ module.exports = function (config) {
                 scheme: 'https',
                 host: 'bsky.app',
               },
-              IS_DEV && {
-                scheme: 'http',
-                host: 'localhost:19006',
-              },
+              ...(IS_DEV
+                ? [
+                    {
+                      scheme: 'http',
+                      host: 'localhost:19006',
+                    },
+                  ]
+                : []),
             ],
             category: ['BROWSABLE', 'DEFAULT'],
           },
         ],
-        splash: {
-          ...SPLASH_CONFIG_ANDROID,
-          dark: DARK_SPLASH_CONFIG_ANDROID,
-        },
       },
       web: {
         favicon: './assets/favicon.png',
       },
       updates: {
-        url: 'https://updates.bsky.app/manifest',
+        url: 'https://updates.yourapp.com/manifest',
         enabled: UPDATES_ENABLED,
         fallbackToCacheTimeout: 30000,
         codeSigningCertificate: UPDATES_ENABLED
@@ -182,24 +228,40 @@ module.exports = function (config) {
             }
           : undefined,
         checkAutomatically: 'NEVER',
-        channel: UPDATES_CHANNEL,
       },
       plugins: [
+        'expo-video',
         'expo-localization',
-        Boolean(process.env.SENTRY_AUTH_TOKEN) && 'sentry-expo',
+        'expo-web-browser',
+        [
+          'react-native-edge-to-edge',
+          {android: {enforceNavigationBarContrast: false}},
+        ],
+        ...(USE_SENTRY
+          ? [
+              /** @type {[string, any]} */ ([
+                '@sentry/react-native/expo',
+                {
+                  organization: 'blueskyweb',
+                  project: 'app',
+                  url: 'https://sentry.io',
+                },
+              ]),
+            ]
+          : []),
         [
           'expo-build-properties',
           {
             ios: {
-              deploymentTarget: '14.0',
-              newArchEnabled: false,
+              deploymentTarget: '15.1',
+              buildReactNativeFromSource: true,
+              ccacheEnabled: IS_DEV,
             },
             android: {
-              compileSdkVersion: 34,
-              targetSdkVersion: 34,
-              buildToolsVersion: '34.0.0',
-              kotlinVersion: '1.8.0',
-              newArchEnabled: false,
+              compileSdkVersion: 35,
+              targetSdkVersion: 35,
+              buildToolsVersion: '35.0.0',
+              buildReactNativeFromSource: IS_PRODUCTION,
             },
           },
         ],
@@ -211,15 +273,145 @@ module.exports = function (config) {
             sounds: PLATFORM === 'ios' ? ['assets/dm.aiff'] : ['assets/dm.mp3'],
           },
         ],
+        'react-native-compressor',
+        [
+          '@bitdrift/react-native',
+          {
+            networkInstrumentation: true,
+          },
+        ],
         './plugins/starterPackAppClipExtension/withStarterPackAppClip.js',
-        './plugins/withAndroidManifestPlugin.js',
+        './plugins/withGradleJVMHeapSizeIncrease.js',
+        './plugins/withAndroidManifestLargeHeapPlugin.js',
         './plugins/withAndroidManifestFCMIconPlugin.js',
-        './plugins/withAndroidStylesWindowBackgroundPlugin.js',
+        './plugins/withAndroidManifestIntentQueriesPlugin.js',
         './plugins/withAndroidStylesAccentColorPlugin.js',
-        './plugins/withAndroidSplashScreenStatusBarTranslucentPlugin.js',
+        './plugins/withAndroidDayNightThemePlugin.js',
+        './plugins/withAndroidNoJitpackPlugin.js',
         './plugins/shareExtension/withShareExtensions.js',
         './plugins/notificationsExtension/withNotificationsExtension.js',
-      ].filter(Boolean),
+        [
+          'expo-font',
+          {
+            fonts: [
+              './assets/fonts/inter/InterVariable.woff2',
+              './assets/fonts/inter/InterVariable-Italic.woff2',
+              // Android only
+              './assets/fonts/inter/Inter-Regular.otf',
+              './assets/fonts/inter/Inter-Italic.otf',
+              './assets/fonts/inter/Inter-Medium.otf',
+              './assets/fonts/inter/Inter-MediumItalic.otf',
+              './assets/fonts/inter/Inter-SemiBold.otf',
+              './assets/fonts/inter/Inter-SemiBoldItalic.otf',
+              './assets/fonts/inter/Inter-Bold.otf',
+              './assets/fonts/inter/Inter-BoldItalic.otf',
+            ],
+          },
+        ],
+        [
+          'expo-splash-screen',
+          {
+            ios: {
+              enableFullScreenImage_legacy: true, // iOS only
+              backgroundColor: '#A8CCFF', // primary_200
+              image: './assets/splash/skyconnect-splash-light.png',
+              resizeMode: 'cover',
+              dark: {
+                enableFullScreenImage_legacy: true, // iOS only
+                backgroundColor: '#00398A', // primary_800
+                image: './assets/splash/skyconnect-splash-dark.png',
+                resizeMode: 'cover',
+              },
+            },
+            android: {
+              backgroundColor: '#A8CCFF', // primary_200
+              image: './assets/splash/android-skyconnect-logo-white.png',
+              imageWidth: 102, // even division of 306px
+              dark: {
+                backgroundColor: '#00398A', // primary_800
+                image: './assets/splash/android-skyconnect-logo-white.png',
+                imageWidth: 102,
+              },
+            },
+          },
+        ],
+        [
+          '@mozzius/expo-dynamic-app-icon',
+          {
+            /**
+             * Default set
+             */
+            default_light: {
+              ios: './assets/app-icons/ios_icon_legacy_light.png',
+              android: './assets/app-icons/android_icon_legacy_light.png',
+              prerendered: true,
+            },
+            default_dark: {
+              ios: './assets/app-icons/ios_icon_legacy_dark.png',
+              android: './assets/app-icons/android_icon_legacy_dark.png',
+              prerendered: true,
+            },
+
+            /**
+             * Bluesky+ core set
+             */
+            core_aurora: {
+              ios: './assets/app-icons/ios_icon_core_aurora.png',
+              android: './assets/app-icons/android_icon_core_aurora.png',
+              prerendered: true,
+            },
+            core_bonfire: {
+              ios: './assets/app-icons/ios_icon_core_bonfire.png',
+              android: './assets/app-icons/android_icon_core_bonfire.png',
+              prerendered: true,
+            },
+            core_sunrise: {
+              ios: './assets/app-icons/ios_icon_core_sunrise.png',
+              android: './assets/app-icons/android_icon_core_sunrise.png',
+              prerendered: true,
+            },
+            core_sunset: {
+              ios: './assets/app-icons/ios_icon_core_sunset.png',
+              android: './assets/app-icons/android_icon_core_sunset.png',
+              prerendered: true,
+            },
+            core_midnight: {
+              ios: './assets/app-icons/ios_icon_core_midnight.png',
+              android: './assets/app-icons/android_icon_core_midnight.png',
+              prerendered: true,
+            },
+            core_flat_blue: {
+              ios: './assets/app-icons/ios_icon_core_flat_blue.png',
+              android: './assets/app-icons/android_icon_core_flat_blue.png',
+              prerendered: true,
+            },
+            core_flat_white: {
+              ios: './assets/app-icons/ios_icon_core_flat_white.png',
+              android: './assets/app-icons/android_icon_core_flat_white.png',
+              prerendered: true,
+            },
+            core_flat_black: {
+              ios: './assets/app-icons/ios_icon_core_flat_black.png',
+              android: './assets/app-icons/android_icon_core_flat_black.png',
+              prerendered: true,
+            },
+            core_classic: {
+              ios: './assets/app-icons/ios_icon_core_classic.png',
+              android: './assets/app-icons/android_icon_core_classic.png',
+              prerendered: true,
+            },
+          },
+        ],
+        ['expo-screen-orientation', {initialOrientation: 'PORTRAIT_UP'}],
+        ['expo-location'],
+        [
+          'expo-contacts',
+          {
+            contactsPermission:
+              'I agree to allow SkyConnect to use my contacts for friend discovery until I opt out.',
+          },
+        ],
+      ],
       extra: {
         eas: {
           build: {
@@ -227,26 +419,26 @@ module.exports = function (config) {
               ios: {
                 appExtensions: [
                   {
-                    targetName: 'Share-with-Bluesky',
-                    bundleIdentifier: 'xyz.blueskyweb.app.Share-with-Bluesky',
+                    targetName: 'Share-with-SkyConnect',
+                    bundleIdentifier: 'app.skyconnect.Share-with-SkyConnect',
                     entitlements: {
                       'com.apple.security.application-groups': [
-                        'group.app.bsky',
+                        'group.app.socialapp',
                       ],
                     },
                   },
                   {
-                    targetName: 'BlueskyNSE',
-                    bundleIdentifier: 'xyz.blueskyweb.app.BlueskyNSE',
+                    targetName: 'SkyConnectNSE',
+                    bundleIdentifier: 'app.skyconnect.SkyConnectNSE',
                     entitlements: {
                       'com.apple.security.application-groups': [
-                        'group.app.bsky',
+                        'group.app.socialapp',
                       ],
                     },
                   },
                   {
-                    targetName: 'BlueskyClip',
-                    bundleIdentifier: 'xyz.blueskyweb.app.AppClip',
+                    targetName: 'SkyConnectClip',
+                    bundleIdentifier: 'app.skyconnect.AppClip',
                   },
                 ],
               },
@@ -254,22 +446,6 @@ module.exports = function (config) {
           },
           projectId: '55bd077a-d905-4184-9c7f-94789ba0f302',
         },
-      },
-      hooks: {
-        postPublish: [
-          /*
-           * @see https://docs.expo.dev/guides/using-sentry/#app-configuration
-           */
-          {
-            file: 'sentry-expo/upload-sourcemaps',
-            config: {
-              organization: 'blueskyweb',
-              project: 'react-native',
-              release: VERSION,
-              dist: SENTRY_DIST,
-            },
-          },
-        ],
       },
     },
   }

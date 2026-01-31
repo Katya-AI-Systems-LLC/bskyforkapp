@@ -1,8 +1,17 @@
-import {Dimensions, StyleProp, StyleSheet, TextStyle} from 'react-native'
-import {Theme, TypographyVariant} from './ThemeContext'
-import {isWeb} from 'platform/detection'
+import {
+  Dimensions,
+  type StyleProp,
+  StyleSheet,
+  type TextStyle,
+} from 'react-native'
+
+import {IS_WEB} from '#/env'
+import {type Theme, type TypographyVariant} from './ThemeContext'
 
 // 1 is lightest, 2 is light, 3 is mid, 4 is dark, 5 is darkest
+/**
+ * @deprecated use ALF colors instead
+ */
 export const colors = {
   white: '#ffffff',
   black: '#000000',
@@ -62,6 +71,9 @@ export const gradients = {
   blueDark: {start: '#5F45E0', end: colors.blue3}, // avis, banner
 }
 
+/**
+ * @deprecated use atoms from `#/alf`
+ */
 export const s = StyleSheet.create({
   // helpers
   footerSpacer: {height: 100},
@@ -78,14 +90,13 @@ export const s = StyleSheet.create({
 
   // font weights
   fw600: {fontWeight: '600'},
-  bold: {fontWeight: 'bold'},
-  fw500: {fontWeight: '500'},
-  semiBold: {fontWeight: '500'},
+  bold: {fontWeight: '600'},
+  fw500: {fontWeight: '600'},
+  semiBold: {fontWeight: '600'},
   fw400: {fontWeight: '400'},
   normal: {fontWeight: '400'},
-  fw300: {fontWeight: '300'},
-  light: {fontWeight: '300'},
-  fw200: {fontWeight: '200'},
+  fw300: {fontWeight: '400'},
+  light: {fontWeight: '400'},
 
   // text decoration
   underline: {textDecorationLine: 'underline'},
@@ -175,7 +186,7 @@ export const s = StyleSheet.create({
   // dimensions
   w100pct: {width: '100%'},
   h100pct: {height: '100%'},
-  hContentRegion: isWeb ? {minHeight: '100%'} : {height: '100%'},
+  hContentRegion: IS_WEB ? {minHeight: '100%'} : {height: '100%'},
   window: {
     width: Dimensions.get('window').width,
     height: Dimensions.get('window').height,

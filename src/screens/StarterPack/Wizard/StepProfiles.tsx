@@ -1,21 +1,22 @@
-import React, {useState} from 'react'
-import {ListRenderItemInfo, View} from 'react-native'
+import {useState} from 'react'
+import {type ListRenderItemInfo, View} from 'react-native'
 import {KeyboardAwareScrollView} from 'react-native-keyboard-controller'
-import {AppBskyActorDefs, ModerationOpts} from '@atproto/api'
+import {type AppBskyActorDefs, type ModerationOpts} from '@atproto/api'
 import {Trans} from '@lingui/macro'
 
 import {useA11y} from '#/state/a11y'
-import {isNative} from 'platform/detection'
-import {useActorAutocompleteQuery} from 'state/queries/actor-autocomplete'
-import {useActorSearchPaginated} from 'state/queries/actor-search'
-import {SearchInput} from 'view/com/util/forms/SearchInput'
-import {List} from 'view/com/util/List'
+import {useActorAutocompleteQuery} from '#/state/queries/actor-autocomplete'
+import {useActorSearch} from '#/state/queries/actor-search'
+import {List} from '#/view/com/util/List'
 import {useWizardState} from '#/screens/StarterPack/Wizard/State'
 import {atoms as a, useTheme} from '#/alf'
+import {SearchInput} from '#/components/forms/SearchInput'
 import {Loader} from '#/components/Loader'
-import {ScreenTransition} from '#/components/StarterPack/Wizard/ScreenTransition'
+import {ScreenTransition} from '#/components/ScreenTransition'
 import {WizardProfileCard} from '#/components/StarterPack/Wizard/WizardListCard'
 import {Text} from '#/components/Typography'
+import {IS_NATIVE} from '#/env'
+import type * as bsky from '#/types/bsky'
 
 function keyExtractor(item: AppBskyActorDefs.ProfileViewBasic) {
   return item?.did ?? ''
@@ -35,7 +36,7 @@ export function StepProfiles({
     data: topPages,
     fetchNextPage,
     isLoading: isLoadingTopPages,
-  } = useActorSearchPaginated({
+  } = useActorSearch({
     query: encodeURIComponent('*'),
   })
   const topFollowers = topPages?.pages
@@ -50,7 +51,7 @@ export function StepProfiles({
 
   const renderItem = ({
     item,
-  }: ListRenderItemInfo<AppBskyActorDefs.ProfileViewBasic>) => {
+  }: ListRenderItemInfo<bsky.profile.AnyProfileView>) => {
     return (
       <WizardProfileCard
         profile={item}
@@ -63,14 +64,16 @@ export function StepProfiles({
   }
 
   return (
-    <ScreenTransition style={[a.flex_1]} direction={state.transitionDirection}>
+    <ScreenTransition
+      style={[a.flex_1]}
+      direction={state.transitionDirection}
+      enabledWeb>
       <View style={[a.border_b, t.atoms.border_contrast_medium]}>
-        <View style={[a.my_sm, a.px_md, {height: 40}]}>
+        <View style={[a.py_sm, a.px_md, {height: 60}]}>
           <SearchInput
-            query={query}
-            onChangeQuery={setQuery}
-            onPressCancelSearch={() => setQuery('')}
-            onSubmitQuery={() => {}}
+            value={query}
+            onChangeText={setQuery}
+            onClearText={() => setQuery('')}
           />
         </View>
       </View>
@@ -80,13 +83,14 @@ export function StepProfiles({
         keyExtractor={keyExtractor}
         renderScrollComponent={props => <KeyboardAwareScrollView {...props} />}
         keyboardShouldPersistTaps="handled"
-        containWeb={true}
+        disableFullWindowScroll={true}
         sideBorders={false}
         style={[a.flex_1]}
         onEndReached={
           !query && !screenReaderEnabled ? () => fetchNextPage() : undefined
         }
-        onEndReachedThreshold={isNative ? 2 : 0.25}
+        onEndReachedThreshold={IS_NATIVE ? 2 : 0.25}
+        keyboardDismissMode="on-drag"
         ListEmptyComponent={
           <View style={[a.flex_1, a.align_center, a.mt_lg, a.px_lg]}>
             {isLoading ? (
@@ -94,7 +98,7 @@ export function StepProfiles({
             ) : (
               <Text
                 style={[
-                  a.font_bold,
+                  a.font_semi_bold,
                   a.text_lg,
                   a.text_center,
                   a.mt_lg,

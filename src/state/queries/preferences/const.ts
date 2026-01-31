@@ -1,22 +1,21 @@
 import {DEFAULT_LOGGED_OUT_LABEL_PREFERENCES} from '#/state/queries/preferences/moderation'
 import {
-  ThreadViewPreferences,
-  UsePreferencesQueryResponse,
+  type ThreadViewPreferences,
+  type UsePreferencesQueryResponse,
 } from '#/state/queries/preferences/types'
 
 export const DEFAULT_HOME_FEED_PREFS: UsePreferencesQueryResponse['feedViewPrefs'] =
   {
     hideReplies: false,
-    hideRepliesByUnfollowed: true,
-    hideRepliesByLikeCount: 0,
+    hideRepliesByUnfollowed: true, // Legacy, ignored
+    hideRepliesByLikeCount: 0, // Legacy, ignored
     hideReposts: false,
     hideQuotePosts: false,
     lab_mergeFeedEnabled: false, // experimental
   }
 
 export const DEFAULT_THREAD_VIEW_PREFS: ThreadViewPreferences = {
-  sort: 'newest',
-  prioritizeFollowedUsers: true,
+  sort: 'hotness',
   lab_treeViewEnabled: false,
 }
 
@@ -34,4 +33,20 @@ export const DEFAULT_LOGGED_OUT_PREFERENCES: UsePreferencesQueryResponse = {
   userAge: 13, // TODO(pwi)
   interests: {tags: []},
   savedFeeds: [],
+  bskyAppState: {
+    queuedNudges: [],
+    activeProgressGuide: undefined,
+    nuxs: [],
+  },
+  postInteractionSettings: {
+    threadgateAllowRules: undefined,
+    postgateEmbeddingRules: [],
+  },
+  verificationPrefs: {
+    hideBadges: false,
+  },
+  liveEventPreferences: {
+    hideAllFeeds: false,
+    hiddenFeedIds: [],
+  },
 }

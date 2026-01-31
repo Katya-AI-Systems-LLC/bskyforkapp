@@ -1,34 +1,68 @@
 import React from 'react'
 import {View} from 'react-native'
-import {AppBskyActorDefs} from '@atproto/api'
-import {msg} from '@lingui/macro'
+import {type AppBskyActorDefs} from '@atproto/api'
+import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
+import {useNavigation} from '@react-navigation/native'
 
-import {useMaybeConvoForUser} from '#/state/queries/messages/get-convo-for-members'
-import {logEvent} from 'lib/statsig/statsig'
+import {useRequireEmailVerification} from '#/lib/hooks/useRequireEmailVerification'
+import {type NavigationProp} from '#/lib/routes/types'
+import {useGetConvoAvailabilityQuery} from '#/state/queries/messages/get-convo-availability'
+import {useGetConvoForMembers} from '#/state/queries/messages/get-convo-for-members'
+import * as Toast from '#/view/com/util/Toast'
 import {atoms as a, useTheme} from '#/alf'
-import {Message_Stroke2_Corner0_Rounded as Message} from '../icons/Message'
-import {Link} from '../Link'
-import {canBeMessaged} from './util'
+import {Button, ButtonIcon} from '#/components/Button'
+import {canBeMessaged} from '#/components/dms/util'
+import {Message_Stroke2_Corner0_Rounded as Message} from '#/components/icons/Message'
+import {useAnalytics} from '#/analytics'
 
 export function MessageProfileButton({
   profile,
 }: {
-  profile: AppBskyActorDefs.ProfileView
+  profile: AppBskyActorDefs.ProfileViewDetailed
 }) {
   const {_} = useLingui()
   const t = useTheme()
+  const ax = useAnalytics()
+  const navigation = useNavigation<NavigationProp>()
+  const requireEmailVerification = useRequireEmailVerification()
 
-  const {data: convo, isPending} = useMaybeConvoForUser(profile.did)
+  const {data: convoAvailability} = useGetConvoAvailabilityQuery(profile.did)
+  const {mutate: initiateConvo} = useGetConvoForMembers({
+    onSuccess: ({convo}) => {
+      ax.metric('chat:open', {logContext: 'ProfileHeader'})
+      navigation.navigate('MessagesConversation', {conversation: convo.id})
+    },
+    onError: () => {
+      Toast.show(_(msg`Failed to create conversation`))
+    },
+  })
 
   const onPress = React.useCallback(() => {
-    if (convo && !convo.lastMessage) {
-      logEvent('chat:create', {logContext: 'ProfileHeader'})
+    if (!convoAvailability?.canChat) {
+      return
     }
-    logEvent('chat:open', {logContext: 'ProfileHeader'})
-  }, [convo])
 
-  if (isPending) {
+    if (convoAvailability.convo) {
+      ax.metric('chat:open', {logContext: 'ProfileHeader'})
+      navigation.navigate('MessagesConversation', {
+        conversation: convoAvailability.convo.id,
+      })
+    } else {
+      ax.metric('chat:create', {logContext: 'ProfileHeader'})
+      initiateConvo([profile.did])
+    }
+  }, [ax, navigation, profile.did, initiateConvo, convoAvailability])
+
+  const wrappedOnPress = requireEmailVerification(onPress, {
+    instructions: [
+      <Trans key="message">
+        Before you can message another user, you must first verify your email.
+      </Trans>,
+    ],
+  })
+
+  if (!convoAvailability) {
     // show pending state based on declaration
     if (canBeMessaged(profile)) {
       return (
@@ -40,15 +74,10 @@ export function MessageProfileButton({
             a.align_center,
             t.atoms.bg_contrast_25,
             a.rounded_full,
-            {width: 36, height: 36},
+            // Matches size of button below to avoid layout shift
+            {width: 33, height: 33},
           ]}>
-          <Message
-            style={[
-              t.atoms.text,
-              {marginLeft: 1, marginBottom: 1, opacity: 0.3},
-            ]}
-            size="md"
-          />
+          <Message style={[t.atoms.text, {opacity: 0.3}]} size="md" />
         </View>
       )
     } else {
@@ -56,23 +85,22 @@ export function MessageProfileButton({
     }
   }
 
-  if (convo) {
+  if (convoAvailability.canChat) {
     return (
-      <Link
-        testID="dmBtn"
-        size="small"
-        color="secondary"
-        variant="solid"
-        shape="round"
-        label={_(msg`Message ${profile.handle}`)}
-        to={`/messages/${convo.id}`}
-        style={[a.justify_center, {width: 36, height: 36}]}
-        onPress={onPress}>
-        <Message
-          style={[t.atoms.text, {marginLeft: 1, marginBottom: 1}]}
-          size="md"
-        />
-      </Link>
+      <>
+        <Button
+          accessibilityRole="button"
+          testID="dmBtn"
+          size="small"
+          color="secondary"
+          variant="solid"
+          shape="round"
+          label={_(msg`Message ${profile.handle}`)}
+          style={[a.justify_center]}
+          onPress={wrappedOnPress}>
+          <ButtonIcon icon={Message} size="md" />
+        </Button>
+      </>
     )
   } else {
     return null

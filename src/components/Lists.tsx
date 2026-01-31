@@ -1,11 +1,15 @@
-import React, {memo} from 'react'
-import {StyleProp, View, ViewStyle} from 'react-native'
+import {memo} from 'react'
+import {type StyleProp, View, type ViewStyle} from 'react-native'
 import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
-import {cleanError} from 'lib/strings/errors'
-import {CenteredView} from 'view/com/util/Views'
-import {atoms as a, flatten, useBreakpoints, useTheme} from '#/alf'
+import {cleanError} from '#/lib/strings/errors'
+import {
+  EmptyState,
+  type EmptyStateButtonProps,
+} from '#/view/com/util/EmptyState'
+import {CenteredView} from '#/view/com/util/Views'
+import {atoms as a, useBreakpoints, useTheme} from '#/alf'
 import {Button, ButtonText} from '#/components/Button'
 import {Error} from '#/components/Error'
 import {Loader} from '#/components/Loader'
@@ -20,6 +24,7 @@ export function ListFooter({
   style,
   showEndMessage = false,
   endMessageText,
+  renderEndMessage,
 }: {
   isFetchingNextPage?: boolean
   hasNextPage?: boolean
@@ -29,6 +34,7 @@ export function ListFooter({
   style?: StyleProp<ViewStyle>
   showEndMessage?: boolean
   endMessageText?: string
+  renderEndMessage?: () => React.ReactNode
 }) {
   const t = useTheme()
 
@@ -41,16 +47,20 @@ export function ListFooter({
         a.pb_lg,
         t.atoms.border_contrast_low,
         {height: height ?? 180, paddingTop: 30},
-        flatten(style),
+        style,
       ]}>
       {isFetchingNextPage ? (
         <Loader size="xl" />
       ) : error ? (
         <ListFooterMaybeError error={error} onRetry={onRetry} />
       ) : !hasNextPage && showEndMessage ? (
-        <Text style={[a.text_sm, t.atoms.text_contrast_low]}>
-          {endMessageText ?? <Trans>You have reached the end</Trans>}
-        </Text>
+        renderEndMessage ? (
+          renderEndMessage()
+        ) : (
+          <Text style={[a.text_sm, t.atoms.text_contrast_low]}>
+            {endMessageText ?? <Trans>You have reached the end</Trans>}
+          </Text>
+        )
       ) : null}
     </View>
   )
@@ -89,7 +99,7 @@ function ListFooterMaybeError({
           )}
         </Text>
         <Button
-          variant="gradient"
+          variant="solid"
           label={_(msg`Press to retry`)}
           style={[
             a.align_center,
@@ -109,30 +119,6 @@ function ListFooterMaybeError({
   )
 }
 
-export function ListHeaderDesktop({
-  title,
-  subtitle,
-}: {
-  title: string
-  subtitle?: string
-}) {
-  const {gtTablet} = useBreakpoints()
-  const t = useTheme()
-
-  if (!gtTablet) return null
-
-  return (
-    <View style={[a.w_full, a.py_lg, a.px_xl, a.gap_xs]}>
-      <Text style={[a.text_3xl, a.font_bold]}>{title}</Text>
-      {subtitle ? (
-        <Text style={[a.text_md, t.atoms.text_contrast_medium]}>
-          {subtitle}
-        </Text>
-      ) : undefined}
-    </View>
-  )
-}
-
 let ListMaybePlaceholder = ({
   isLoading,
   noEmpty,
@@ -146,7 +132,10 @@ let ListMaybePlaceholder = ({
   onGoBack,
   hideBackButton,
   sideBorders,
-  topBorder = true,
+  topBorder = false,
+  emptyStateIcon,
+  emptyStateButton,
+  useEmptyState = false,
 }: {
   isLoading: boolean
   noEmpty?: boolean
@@ -161,6 +150,9 @@ let ListMaybePlaceholder = ({
   hideBackButton?: boolean
   sideBorders?: boolean
   topBorder?: boolean
+  emptyStateIcon?: React.ComponentType<any> | React.ReactElement
+  emptyStateButton?: EmptyStateButtonProps
+  useEmptyState?: boolean
 }): React.ReactNode => {
   const t = useTheme()
   const {_} = useLingui()
@@ -170,7 +162,7 @@ let ListMaybePlaceholder = ({
     return (
       <CenteredView
         style={[
-          a.flex_1,
+          a.h_full_vh,
           a.align_center,
           !gtMobile ? a.justify_between : a.gap_5xl,
           t.atoms.border_contrast_low,
@@ -189,12 +181,31 @@ let ListMaybePlaceholder = ({
     return (
       <Error
         title={errorTitle ?? _(msg`Oops!`)}
-        message={errorMessage ?? _(`Something went wrong!`)}
+        message={errorMessage ?? _(msg`Something went wrong!`)}
         onRetry={onRetry}
         onGoBack={onGoBack}
         sideBorders={sideBorders}
         hideBackButton={hideBackButton}
       />
+    )
+  }
+
+  if (useEmptyState) {
+    return (
+      <CenteredView
+        style={[t.atoms.border_contrast_low]}
+        sideBorders={sideBorders ?? gtMobile}>
+        <EmptyState
+          icon={emptyStateIcon}
+          message={
+            emptyMessage ??
+            (emptyType === 'results'
+              ? _(msg`No results found`)
+              : _(msg`Page not found`))
+          }
+          button={emptyStateButton}
+        />
+      </CenteredView>
     )
   }
 

@@ -3,11 +3,11 @@ import React from 'react'
 import {
   createStarterPackLinkFromAndroidReferrer,
   httpStarterPackUriToAtUri,
-} from 'lib/strings/starter-pack'
-import {isAndroid} from 'platform/detection'
-import {useHasCheckedForStarterPack} from 'state/preferences/used-starter-packs'
-import {useSetActiveStarterPack} from 'state/shell/starter-pack'
-import {DevicePrefs, Referrer} from '../../../modules/expo-bluesky-swiss-army'
+} from '#/lib/strings/starter-pack'
+import {useHasCheckedForStarterPack} from '#/state/preferences/used-starter-packs'
+import {useSetActiveStarterPack} from '#/state/shell/starter-pack'
+import {IS_ANDROID} from '#/env'
+import {Referrer, SharedPrefs} from '../../../modules/expo-bluesky-swiss-army'
 
 export function useStarterPackEntry() {
   const [ready, setReady] = React.useState(false)
@@ -32,21 +32,17 @@ export function useStarterPackEntry() {
     ;(async () => {
       let uri: string | null | undefined
 
-      if (isAndroid) {
+      if (IS_ANDROID) {
         const res = await Referrer.getGooglePlayReferrerInfoAsync()
 
         if (res && res.installReferrer) {
           uri = createStarterPackLinkFromAndroidReferrer(res.installReferrer)
         }
       } else {
-        const res = await DevicePrefs.getStringValueAsync(
-          'starterPackUri',
-          true,
-        )
-
-        if (res) {
-          uri = httpStarterPackUriToAtUri(res)
-          DevicePrefs.setStringValueAsync('starterPackUri', null, true)
+        const starterPackUri = SharedPrefs.getString('starterPackUri')
+        if (starterPackUri) {
+          uri = httpStarterPackUriToAtUri(starterPackUri)
+          SharedPrefs.setValue('starterPackUri', null)
         }
       }
 

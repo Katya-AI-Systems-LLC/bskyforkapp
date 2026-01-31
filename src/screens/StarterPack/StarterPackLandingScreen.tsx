@@ -1,42 +1,43 @@
 import React from 'react'
-import {Pressable, ScrollView, View} from 'react-native'
+import {Pressable, View} from 'react-native'
 import Animated, {FadeIn, FadeOut} from 'react-native-reanimated'
 import {
   AppBskyGraphDefs,
   AppBskyGraphStarterpack,
   AtUri,
-  ModerationOpts,
+  type ModerationOpts,
 } from '@atproto/api'
 import {FontAwesomeIcon} from '@fortawesome/react-native-fontawesome'
 import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
 import {JOINED_THIS_WEEK} from '#/lib/constants'
-import {isAndroidWeb} from 'lib/browser'
-import {useWebMediaQueries} from 'lib/hooks/useWebMediaQueries'
-import {logEvent} from 'lib/statsig/statsig'
-import {createStarterPackGooglePlayUri} from 'lib/strings/starter-pack'
-import {isWeb} from 'platform/detection'
-import {useModerationOpts} from 'state/preferences/moderation-opts'
-import {useStarterPackQuery} from 'state/queries/starter-packs'
+import {useWebMediaQueries} from '#/lib/hooks/useWebMediaQueries'
+import {createStarterPackGooglePlayUri} from '#/lib/strings/starter-pack'
+import {useModerationOpts} from '#/state/preferences/moderation-opts'
+import {useStarterPackQuery} from '#/state/queries/starter-packs'
 import {
   useActiveStarterPack,
   useSetActiveStarterPack,
-} from 'state/shell/starter-pack'
+} from '#/state/shell/starter-pack'
+import {LoggedOutScreenState} from '#/view/com/auth/LoggedOut'
 import {formatCount} from '#/view/com/util/numeric/format'
-import {LoggedOutScreenState} from 'view/com/auth/LoggedOut'
-import {CenteredView} from 'view/com/util/Views'
-import {Logo} from 'view/icons/Logo'
+import {Logo} from '#/view/icons/Logo'
 import {atoms as a, useTheme} from '#/alf'
 import {Button, ButtonText} from '#/components/Button'
 import {useDialogControl} from '#/components/Dialog'
 import * as FeedCard from '#/components/FeedCard'
-import {ChevronLeft_Stroke2_Corner0_Rounded} from '#/components/icons/Chevron'
+import {useRichText} from '#/components/hooks/useRichText'
+import * as Layout from '#/components/Layout'
 import {LinearGradientBackground} from '#/components/LinearGradientBackground'
 import {ListMaybePlaceholder} from '#/components/Lists'
 import {Default as ProfileCard} from '#/components/ProfileCard'
 import * as Prompt from '#/components/Prompt'
+import {RichText} from '#/components/RichText'
 import {Text} from '#/components/Typography'
+import {useAnalytics} from '#/analytics'
+import {IS_WEB, IS_WEB_MOBILE_ANDROID} from '#/env'
+import * as bsky from '#/types/bsky'
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable)
 
@@ -46,7 +47,7 @@ interface AppClipMessage {
   jsonToStore?: string
 }
 
-function postAppClipMessage(message: AppClipMessage) {
+export function postAppClipMessage(message: AppClipMessage) {
   // @ts-expect-error safari webview only
   window.webkit.messageHandlers.onMessage.postMessage(JSON.stringify(message))
 }
@@ -83,9 +84,20 @@ export function LandingScreen({
     return <ListMaybePlaceholder isLoading={true} />
   }
 
+  // Just for types, this cannot be hit
+  if (
+    !bsky.dangerousIsType<AppBskyGraphStarterpack.Record>(
+      starterPack.record,
+      AppBskyGraphStarterpack.isRecord,
+    )
+  ) {
+    return null
+  }
+
   return (
     <LandingScreenLoaded
       starterPack={starterPack}
+      starterPackRecord={starterPack.record}
       setScreenState={setScreenState}
       moderationOpts={moderationOpts}
     />
@@ -94,22 +106,26 @@ export function LandingScreen({
 
 function LandingScreenLoaded({
   starterPack,
+  starterPackRecord: record,
   setScreenState,
   // TODO apply this to profile card
 
   moderationOpts,
 }: {
   starterPack: AppBskyGraphDefs.StarterPackView
+  starterPackRecord: AppBskyGraphStarterpack.Record
   setScreenState: (state: LoggedOutScreenState) => void
   moderationOpts: ModerationOpts
 }) {
-  const {record, creator, listItemsSample, feeds} = starterPack
-  const {_} = useLingui()
+  const {creator, listItemsSample, feeds} = starterPack
+  const {_, i18n} = useLingui()
+  const ax = useAnalytics()
   const t = useTheme()
   const activeStarterPack = useActiveStarterPack()
   const setActiveStarterPack = useSetActiveStarterPack()
   const {isTabletOrDesktop} = useWebMediaQueries()
   const androidDialogControl = useDialogControl()
+  const [descriptionRt] = useRichText(record.description || '')
 
   const [appClipOverlayVisible, setAppClipOverlayVisible] =
     React.useState(false)
@@ -126,12 +142,12 @@ function LandingScreenLoaded({
       postAppClipMessage({
         action: 'present',
       })
-    } else if (isAndroidWeb) {
+    } else if (IS_WEB_MOBILE_ANDROID) {
       androidDialogControl.open()
     } else {
       onContinue()
     }
-    logEvent('starterPack:ctaPress', {
+    ax.metric('starterPack:ctaPress', {
       starterPack: starterPack.uri,
     })
   }
@@ -148,15 +164,9 @@ function LandingScreenLoaded({
     }
   }
 
-  if (!AppBskyGraphStarterpack.isRecord(record)) {
-    return null
-  }
-
   return (
-    <CenteredView style={a.flex_1}>
-      <ScrollView
-        style={[a.flex_1, t.atoms.bg]}
-        contentContainerStyle={{paddingBottom: 100}}>
+    <View style={[a.flex_1]}>
+      <Layout.Content ignoreTabletLayoutOffset>
         <LinearGradientBackground
           style={[
             a.align_center,
@@ -168,37 +178,12 @@ function LandingScreenLoaded({
               paddingTop: 100,
             },
           ]}>
-          <Pressable
-            style={[
-              a.absolute,
-              a.rounded_full,
-              a.align_center,
-              a.justify_center,
-              {
-                top: 10,
-                left: 10,
-                height: 35,
-                width: 35,
-                backgroundColor: 'rgba(0, 0, 0, 0.5)',
-              },
-            ]}
-            onPress={() => {
-              setActiveStarterPack(undefined)
-            }}
-            accessibilityLabel={_(msg`Back`)}
-            accessibilityHint={_(msg`Go back to previous screen`)}>
-            <ChevronLeft_Stroke2_Corner0_Rounded
-              width={20}
-              height={20}
-              fill="white"
-            />
-          </Pressable>
           <View style={[a.flex_row, a.gap_md, a.pb_sm]}>
             <Logo width={76} fill="white" />
           </View>
           <Text
             style={[
-              a.font_bold,
+              a.font_semi_bold,
               a.text_4xl,
               a.text_center,
               a.leading_tight,
@@ -209,7 +194,7 @@ function LandingScreenLoaded({
           <Text
             style={[
               a.text_center,
-              a.font_semibold,
+              a.font_semi_bold,
               a.text_md,
               {color: 'white'},
             ]}>
@@ -218,9 +203,7 @@ function LandingScreenLoaded({
         </LinearGradientBackground>
         <View style={[a.gap_2xl, a.mx_lg, a.my_2xl]}>
           {record.description ? (
-            <Text style={[a.text_md, t.atoms.text_contrast_medium]}>
-              {record.description}
-            </Text>
+            <RichText value={descriptionRt} style={[a.text_md]} />
           ) : null}
           <View style={[a.gap_sm]}>
             <Button
@@ -241,19 +224,21 @@ function LandingScreenLoaded({
               />
               <Text
                 style={[
-                  a.font_semibold,
+                  a.font_semi_bold,
                   a.text_sm,
                   t.atoms.text_contrast_medium,
                 ]}
                 numberOfLines={1}>
-                <Trans>{formatCount(JOINED_THIS_WEEK)} joined this week</Trans>
+                <Trans>
+                  {formatCount(i18n, JOINED_THIS_WEEK)} joined this week
+                </Trans>
               </Text>
             </View>
           </View>
           <View style={[a.gap_3xl]}>
             {Boolean(listItemsSample?.length) && (
               <View style={[a.gap_md]}>
-                <Text style={[a.font_heavy, a.text_lg]}>
+                <Text style={[a.font_bold, a.text_lg]}>
                   {listItemsCount <= 8 ? (
                     <Trans>You'll follow these people right away</Trans>
                   ) : (
@@ -294,7 +279,7 @@ function LandingScreenLoaded({
             )}
             {feeds?.length ? (
               <View style={[a.gap_md]}>
-                <Text style={[a.font_heavy, a.text_lg]}>
+                <Text style={[a.font_bold, a.text_lg]}>
                   <Trans>You'll stay updated with these feeds</Trans>
                 </Text>
 
@@ -316,7 +301,7 @@ function LandingScreenLoaded({
                         t.atoms.border_contrast_low,
                       ]}
                       key={feed.uri}>
-                      <FeedCard.Default type="feed" view={feed} />
+                      <FeedCard.Default view={feed} />
                     </View>
                   ))}
                 </View>
@@ -324,32 +309,34 @@ function LandingScreenLoaded({
             ) : null}
           </View>
           <Button
-            label={_(msg`Signup without a starter pack`)}
+            label={_(msg`Create an account without using this starter pack`)}
             variant="solid"
             color="secondary"
-            size="medium"
+            size="large"
             style={[a.py_lg]}
             onPress={onJoinWithoutPress}>
             <ButtonText>
-              <Trans>Signup without a starter pack</Trans>
+              <Trans>Create an account without using this starter pack</Trans>
             </ButtonText>
           </Button>
         </View>
-      </ScrollView>
+      </Layout.Content>
       <AppClipOverlay
         visible={appClipOverlayVisible}
         setIsVisible={setAppClipOverlayVisible}
       />
       <Prompt.Outer control={androidDialogControl}>
-        <Prompt.TitleText>
-          <Trans>Download Bluesky</Trans>
-        </Prompt.TitleText>
-        <Prompt.DescriptionText>
-          <Trans>
-            The experience is better in the app. Download Bluesky now and we'll
-            pick back up where you left off.
-          </Trans>
-        </Prompt.DescriptionText>
+        <Prompt.Content>
+          <Prompt.TitleText>
+            <Trans>Download Bluesky</Trans>
+          </Prompt.TitleText>
+          <Prompt.DescriptionText>
+            <Trans>
+              The experience is better in the app. Download Bluesky now and
+              we'll pick back up where you left off.
+            </Trans>
+          </Prompt.DescriptionText>
+        </Prompt.Content>
         <Prompt.Actions>
           <Prompt.Action
             cta="Download on Google Play"
@@ -374,17 +361,17 @@ function LandingScreenLoaded({
           />
         </Prompt.Actions>
       </Prompt.Outer>
-      {isWeb && (
+      {IS_WEB && (
         <meta
           name="apple-itunes-app"
           content="app-id=xyz.blueskyweb.app, app-clip-bundle-id=xyz.blueskyweb.app.AppClip, app-clip-display=card"
         />
       )}
-    </CenteredView>
+    </View>
   )
 }
 
-function AppClipOverlay({
+export function AppClipOverlay({
   visible,
   setIsVisible,
 }: {
@@ -398,11 +385,8 @@ function AppClipOverlay({
       accessibilityRole="button"
       style={[
         a.absolute,
+        a.inset_0,
         {
-          top: 0,
-          left: 0,
-          right: 0,
-          bottom: 0,
           backgroundColor: 'rgba(0, 0, 0, 0.95)',
           zIndex: 1,
         },
@@ -414,7 +398,11 @@ function AppClipOverlay({
         {/* Webkit needs this to have a zindex of 2? */}
         <View style={[a.gap_md, {zIndex: 2}]}>
           <Text
-            style={[a.font_bold, a.text_4xl, {lineHeight: 40, color: 'white'}]}>
+            style={[
+              a.font_semi_bold,
+              a.text_4xl,
+              {lineHeight: 40, color: 'white'},
+            ]}>
             Download Bluesky to get started!
           </Text>
           <Text style={[a.text_lg, {color: 'white'}]}>

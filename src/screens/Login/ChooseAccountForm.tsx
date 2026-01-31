@@ -3,16 +3,15 @@ import {View} from 'react-native'
 import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 
-import {useAnalytics} from '#/lib/analytics/analytics'
-import {logEvent} from '#/lib/statsig/statsig'
 import {logger} from '#/logger'
-import {SessionAccount, useSession, useSessionApi} from '#/state/session'
+import {type SessionAccount, useSession, useSessionApi} from '#/state/session'
 import {useLoggedOutViewControls} from '#/state/shell/logged-out'
 import * as Toast from '#/view/com/util/Toast'
-import {atoms as a} from '#/alf'
+import {atoms as a, web} from '#/alf'
 import {AccountList} from '#/components/AccountList'
 import {Button, ButtonText} from '#/components/Button'
 import * as TextField from '#/components/forms/TextField'
+import {useAnalytics} from '#/analytics'
 import {FormContainer} from './FormContainer'
 
 export const ChooseAccountForm = ({
@@ -23,15 +22,11 @@ export const ChooseAccountForm = ({
   onPressBack: () => void
 }) => {
   const [pendingDid, setPendingDid] = React.useState<string | null>(null)
-  const {track, screen} = useAnalytics()
   const {_} = useLingui()
+  const ax = useAnalytics()
   const {currentAccount} = useSession()
   const {resumeSession} = useSessionApi()
   const {setShowLoggedOut} = useLoggedOutViewControls()
-
-  React.useEffect(() => {
-    screen('Choose Account')
-  }, [screen])
 
   const onSelect = React.useCallback(
     async (account: SessionAccount) => {
@@ -51,12 +46,11 @@ export const ChooseAccountForm = ({
       }
       try {
         setPendingDid(account.did)
-        await resumeSession(account)
-        logEvent('account:loggedIn', {
+        await resumeSession(account, true)
+        ax.metric('account:loggedIn', {
           logContext: 'ChooseAccountForm',
           withPassword: false,
         })
-        track('Sign In', {resumedSession: true})
         Toast.show(_(msg`Signed in as @${account.handle}`))
       } catch (e: any) {
         logger.error('choose account: initSession failed', {
@@ -70,7 +64,6 @@ export const ChooseAccountForm = ({
     },
     [
       currentAccount,
-      track,
       resumeSession,
       pendingDid,
       onSelectAccount,
@@ -82,7 +75,8 @@ export const ChooseAccountForm = ({
   return (
     <FormContainer
       testID="chooseAccountForm"
-      titleText={<Trans>Select account</Trans>}>
+      titleText={<Trans>Select account</Trans>}
+      style={web([a.py_2xl])}>
       <View>
         <TextField.LabelText>
           <Trans>Sign in as...</Trans>
@@ -98,7 +92,7 @@ export const ChooseAccountForm = ({
           label={_(msg`Back`)}
           variant="solid"
           color="secondary"
-          size="medium"
+          size="large"
           onPress={onPressBack}>
           <ButtonText>{_(msg`Back`)}</ButtonText>
         </Button>

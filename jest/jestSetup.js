@@ -18,9 +18,6 @@ jest.mock('react-native/Libraries/EventEmitter/NativeEventEmitter', () => {
   }
 })
 
-// Silence the warning: Animated: `useNativeDriver` is not supported
-jest.mock('react-native/Libraries/Animated/NativeAnimatedHelper')
-
 jest.mock('@fortawesome/react-native-fontawesome', () => ({
   FontAwesomeIcon: '',
 }))
@@ -36,29 +33,19 @@ jest.mock('react-native-safe-area-context', () => {
   }
 })
 
-jest.mock('rn-fetch-blob', () => ({
-  config: jest.fn().mockReturnThis(),
-  cancel: jest.fn(),
-  fetch: jest.fn(),
+jest.mock('expo-file-system/legacy', () => ({
+  getInfoAsync: jest.fn().mockResolvedValue({exists: true, size: 100}),
+  deleteAsync: jest.fn(),
+  createDownloadResumable: jest.fn(),
 }))
 
-jest.mock('@bam.tech/react-native-image-resizer', () => ({
-  createResizedImage: jest.fn(),
-}))
-
-jest.mock('@segment/analytics-react-native', () => ({
-  createClient: () => ({
-    add: jest.fn(),
+jest.mock('expo-image-manipulator', () => ({
+  manipulateAsync: jest.fn().mockResolvedValue({
+    uri: 'file://resized-image',
   }),
-  useAnalytics: () => ({
-    track: jest.fn(),
-    identify: jest.fn(),
-    reset: jest.fn(),
-    group: jest.fn(),
-    screen: jest.fn(),
-    alias: jest.fn(),
-    flush: jest.fn(),
-  }),
+  SaveFormat: {
+    JPEG: 'jpeg',
+  },
 }))
 
 jest.mock('expo-camera', () => ({
@@ -94,4 +81,27 @@ jest.mock('crypto', () => ({}))
 jest.mock('expo-application', () => ({
   nativeApplicationVersion: '1.0.0',
   nativeBuildVersion: '1',
+}))
+
+jest.mock('expo-modules-core', () => ({
+  requireNativeModule: jest.fn().mockImplementation(moduleName => {
+    if (moduleName === 'ExpoPlatformInfo') {
+      return {
+        getIsReducedMotionEnabled: () => false,
+      }
+    }
+    if (moduleName === 'BottomSheet') {
+      return {
+        dismissAll: () => {},
+      }
+    }
+  }),
+  requireNativeViewManager: jest.fn().mockImplementation(_ => {
+    return () => null
+  }),
+  createPermissionHook: () => () => [true],
+}))
+
+jest.mock('expo-localization', () => ({
+  getLocales: () => [],
 }))

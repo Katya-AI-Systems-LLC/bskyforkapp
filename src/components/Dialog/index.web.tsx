@@ -1,43 +1,51 @@
 import React, {useImperativeHandle} from 'react'
 import {
   FlatList,
-  FlatListProps,
-  StyleProp,
-  TouchableWithoutFeedback,
+  type FlatListProps,
+  type GestureResponderEvent,
+  Pressable,
+  type StyleProp,
   View,
-  ViewStyle,
+  type ViewStyle,
 } from 'react-native'
-import Animated, {FadeIn, FadeInDown} from 'react-native-reanimated'
 import {msg} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
-import {FocusScope} from '@tamagui/focus-scope'
+import {DismissableLayer, FocusGuards, FocusScope} from 'radix-ui/internal'
+import {RemoveScrollBar} from 'react-remove-scroll-bar'
 
 import {logger} from '#/logger'
+import {useA11y} from '#/state/a11y'
 import {useDialogStateControlContext} from '#/state/dialogs'
 import {atoms as a, flatten, useBreakpoints, useTheme, web} from '#/alf'
 import {Button, ButtonIcon} from '#/components/Button'
 import {Context} from '#/components/Dialog/context'
 import {
-  DialogControlProps,
-  DialogInnerProps,
-  DialogOuterProps,
+  type DialogControlProps,
+  type DialogInnerProps,
+  type DialogOuterProps,
 } from '#/components/Dialog/types'
 import {TimesLarge_Stroke2_Corner0_Rounded as X} from '#/components/icons/Times'
 import {Portal} from '#/components/Portal'
 
 export {useDialogContext, useDialogControl} from '#/components/Dialog/context'
+export * from '#/components/Dialog/shared'
 export * from '#/components/Dialog/types'
+export * from '#/components/Dialog/utils'
 export {Input} from '#/components/forms/TextField'
 
+// 100 minus 10vh of paddingVertical
+export const WEB_DIALOG_HEIGHT = '80vh'
+
 const stopPropagation = (e: any) => e.stopPropagation()
+const preventDefault = (e: any) => e.preventDefault()
 
 export function Outer({
   children,
   control,
   onClose,
+  webOptions,
 }: React.PropsWithChildren<DialogOuterProps>) {
   const {_} = useLingui()
-  const t = useTheme()
   const {gtMobile} = useBreakpoints()
   const [isOpen, setIsOpen] = React.useState(false)
   const {setDialogIsOpen} = useDialogStateControlContext()
@@ -71,9 +79,12 @@ export function Outer({
     [control.id, onClose, setDialogIsOpen],
   )
 
-  const handleBackgroundPress = React.useCallback(async () => {
-    close()
-  }, [close])
+  const handleBackgroundPress = React.useCallback(
+    async (e: GestureResponderEvent) => {
+      webOptions?.onBackgroundPress ? webOptions.onBackgroundPress(e) : close()
+    },
+    [webOptions, close],
+  )
 
   useImperativeHandle(
     control.ref,
@@ -84,24 +95,14 @@ export function Outer({
     [close, open],
   )
 
-  React.useEffect(() => {
-    if (!isOpen) return
-
-    function handler(e: KeyboardEvent) {
-      if (e.key === 'Escape') {
-        e.stopPropagation()
-        close()
-      }
-    }
-
-    document.addEventListener('keydown', handler)
-
-    return () => document.removeEventListener('keydown', handler)
-  }, [close, isOpen])
-
   const context = React.useMemo(
     () => ({
       close,
+      IS_NATIVEDialog: false,
+      nativeSnapPoint: 0,
+      disableDrag: false,
+      setDisableDrag: () => {},
+      isWithinDialog: true,
     }),
     [close],
   )
@@ -111,7 +112,8 @@ export function Outer({
       {isOpen && (
         <Portal>
           <Context.Provider value={context}>
-            <TouchableWithoutFeedback
+            <RemoveScrollBar />
+            <Pressable
               accessibilityHint={undefined}
               accessibilityLabel={_(msg`Close active dialog`)}
               onPress={handleBackgroundPress}>
@@ -120,34 +122,31 @@ export function Outer({
                   web(a.fixed),
                   a.inset_0,
                   a.z_10,
+                  a.px_xl,
+                  webOptions?.alignCenter ? a.justify_center : undefined,
                   a.align_center,
-                  gtMobile ? a.p_lg : a.p_md,
-                  {overflowY: 'auto'},
+                  {
+                    overflowY: 'auto',
+                    paddingVertical: gtMobile ? '10vh' : a.pt_xl.paddingTop,
+                  },
                 ]}>
-                <Animated.View
-                  entering={FadeIn.duration(150)}
-                  // exiting={FadeOut.duration(150)}
-                  style={[
-                    web(a.fixed),
-                    a.inset_0,
-                    {opacity: 0.8, backgroundColor: t.palette.black},
-                  ]}
-                />
-
+                <Backdrop />
+                {/**
+                 * This is needed to prevent centered dialogs from overflowing
+                 * above the screen, and provides a "natural" centering so that
+                 * stacked dialogs appear relatively aligned.
+                 */}
                 <View
                   style={[
                     a.w_full,
                     a.z_20,
-                    a.justify_center,
                     a.align_center,
-                    {
-                      minHeight: web('calc(90vh - 36px)') || undefined,
-                    },
+                    web({minHeight: '60vh', position: 'static'}),
                   ]}>
                   {children}
                 </View>
               </View>
-            </TouchableWithoutFeedback>
+            </Pressable>
           </Context.Provider>
         </Portal>
       )}
@@ -161,29 +160,32 @@ export function Inner({
   label,
   accessibilityLabelledBy,
   accessibilityDescribedBy,
+  header,
+  contentContainerStyle,
 }: DialogInnerProps) {
   const t = useTheme()
+  const {close} = React.useContext(Context)
   const {gtMobile} = useBreakpoints()
+  const {reduceMotionEnabled} = useA11y()
+  FocusGuards.useFocusGuards()
   return (
-    <FocusScope loop enabled trapped>
-      <Animated.View
+    <FocusScope.FocusScope loop asChild trapped>
+      <View
         role="dialog"
         aria-role="dialog"
         aria-label={label}
         aria-labelledby={accessibilityLabelledBy}
         aria-describedby={accessibilityDescribedBy}
-        // @ts-ignore web only -prf
+        // @ts-expect-error web only -prf
         onClick={stopPropagation}
         onStartShouldSetResponder={_ => true}
         onTouchEnd={stopPropagation}
-        entering={FadeInDown.duration(100)}
-        // exiting={FadeOut.duration(100)}
-        style={[
+        // note: flatten is required for some reason -sfn
+        style={flatten([
           a.relative,
           a.rounded_md,
           a.w_full,
           a.border,
-          gtMobile ? a.p_2xl : a.p_xl,
           t.atoms.bg,
           {
             maxWidth: 600,
@@ -192,11 +194,21 @@ export function Inner({
             shadowOpacity: t.name === 'light' ? 0.1 : 0.4,
             shadowRadius: 30,
           },
-          flatten(style),
-        ]}>
-        {children}
-      </Animated.View>
-    </FocusScope>
+          !reduceMotionEnabled && a.zoom_fade_in,
+          style,
+        ])}>
+        <DismissableLayer.DismissableLayer
+          onInteractOutside={preventDefault}
+          onFocusOutside={preventDefault}
+          onDismiss={close}
+          style={{height: '100%', display: 'flex', flexDirection: 'column'}}>
+          {header}
+          <View style={[gtMobile ? a.p_2xl : a.p_xl, contentContainerStyle]}>
+            {children}
+          </View>
+        </DismissableLayer.DismissableLayer>
+      </View>
+    </FocusScope.FocusScope>
   )
 }
 
@@ -204,32 +216,62 @@ export const ScrollableInner = Inner
 
 export const InnerFlatList = React.forwardRef<
   FlatList,
-  FlatListProps<any> & {label: string} & {webInnerStyle?: StyleProp<ViewStyle>}
->(function InnerFlatList({label, style, webInnerStyle, ...props}, ref) {
+  FlatListProps<any> & {label: string} & {
+    webInnerStyle?: StyleProp<ViewStyle>
+    webInnerContentContainerStyle?: StyleProp<ViewStyle>
+    footer?: React.ReactNode
+  }
+>(function InnerFlatList(
+  {
+    label,
+    style,
+    webInnerStyle,
+    webInnerContentContainerStyle,
+    footer,
+    ...props
+  },
+  ref,
+) {
   const {gtMobile} = useBreakpoints()
   return (
     <Inner
       label={label}
       style={[
-        // @ts-ignore web only -sfn
-        {
-          paddingHorizontal: 0,
-          maxHeight: 'calc(-36px + 100vh)',
-          overflow: 'hidden',
-        },
+        a.overflow_hidden,
+        a.px_0,
+        web({maxHeight: WEB_DIALOG_HEIGHT}),
         webInnerStyle,
-      ]}>
+      ]}
+      contentContainerStyle={[a.h_full, a.px_0, webInnerContentContainerStyle]}>
       <FlatList
         ref={ref}
-        style={[gtMobile ? a.px_2xl : a.px_xl, flatten(style)]}
+        style={[a.h_full, gtMobile ? a.px_2xl : a.px_xl, style]}
         {...props}
       />
+      {footer}
     </Inner>
   )
 })
 
-export function Handle() {
-  return null
+export function FlatListFooter({children}: {children: React.ReactNode}) {
+  const t = useTheme()
+
+  return (
+    <View
+      style={[
+        a.absolute,
+        a.bottom_0,
+        a.w_full,
+        a.z_10,
+        t.atoms.bg,
+        a.border_t,
+        t.atoms.border_contrast_low,
+        a.px_lg,
+        a.py_md,
+      ]}>
+      {children}
+    </View>
+  )
 }
 
 export function Close() {
@@ -254,6 +296,27 @@ export function Close() {
         label={_(msg`Close active dialog`)}>
         <ButtonIcon icon={X} size="md" />
       </Button>
+    </View>
+  )
+}
+
+export function Handle() {
+  return null
+}
+
+export function Backdrop() {
+  const t = useTheme()
+  const {reduceMotionEnabled} = useA11y()
+  return (
+    <View style={{opacity: 0.8}}>
+      <View
+        style={[
+          a.fixed,
+          a.inset_0,
+          {backgroundColor: t.palette.black},
+          !reduceMotionEnabled && a.fade_in,
+        ]}
+      />
     </View>
   )
 }

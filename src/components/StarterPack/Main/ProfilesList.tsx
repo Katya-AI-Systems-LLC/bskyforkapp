@@ -1,20 +1,27 @@
 import React, {useCallback} from 'react'
-import {ListRenderItemInfo, View} from 'react-native'
+import {type ListRenderItemInfo, View} from 'react-native'
 import {
-  AppBskyActorDefs,
-  AppBskyGraphGetList,
+  type AppBskyActorDefs,
+  type AppBskyGraphGetList,
   AtUri,
-  ModerationOpts,
+  type ModerationOpts,
 } from '@atproto/api'
-import {InfiniteData, UseInfiniteQueryResult} from '@tanstack/react-query'
+import {
+  type InfiniteData,
+  type UseInfiniteQueryResult,
+} from '@tanstack/react-query'
 
-import {useBottomBarOffset} from 'lib/hooks/useBottomBarOffset'
-import {isNative, isWeb} from 'platform/detection'
-import {useSession} from 'state/session'
-import {List, ListRef} from 'view/com/util/List'
-import {SectionRef} from '#/screens/Profile/Sections/types'
+import {useBottomBarOffset} from '#/lib/hooks/useBottomBarOffset'
+import {useInitialNumToRender} from '#/lib/hooks/useInitialNumToRender'
+import {isBlockedOrBlocking} from '#/lib/moderation/blocked-and-muted'
+import {useAllListMembersQuery} from '#/state/queries/list-members'
+import {useSession} from '#/state/session'
+import {List, type ListRef} from '#/view/com/util/List'
+import {type SectionRef} from '#/screens/Profile/Sections/types'
 import {atoms as a, useTheme} from '#/alf'
+import {ListFooter, ListMaybePlaceholder} from '#/components/Lists'
 import {Default as ProfileCard} from '#/components/ProfileCard'
+import {IS_NATIVE, IS_WEB} from '#/env'
 
 function keyExtractor(item: AppBskyActorDefs.ProfileViewBasic, index: number) {
   return `${item.did}-${index}`
@@ -32,22 +39,24 @@ interface ProfilesListProps {
 
 export const ProfilesList = React.forwardRef<SectionRef, ProfilesListProps>(
   function ProfilesListImpl(
-    {listUri, listMembersQuery, moderationOpts, headerHeight, scrollElRef},
+    {listUri, moderationOpts, headerHeight, scrollElRef},
     ref,
   ) {
     const t = useTheme()
-    const [initialHeaderHeight] = React.useState(headerHeight)
-    const bottomBarOffset = useBottomBarOffset(20)
+    const bottomBarOffset = useBottomBarOffset(headerHeight)
+    const initialNumToRender = useInitialNumToRender()
     const {currentAccount} = useSession()
+    const {data, refetch, isError} = useAllListMembersQuery(listUri)
 
     const [isPTRing, setIsPTRing] = React.useState(false)
 
-    const {data, refetch} = listMembersQuery
-
     // The server returns these sorted by descending creation date, so we want to invert
-    const profiles = data?.pages
-      .flatMap(p => p.items.map(i => i.subject))
-      .filter(p => !p.associated?.labeler)
+
+    const profiles = data
+      ?.filter(
+        p => !isBlockedOrBlocking(p.subject) && !p.subject.associated?.labeler,
+      )
+      .map(p => p.subject)
       .reverse()
     const isOwn = new AtUri(listUri).host === currentAccount?.did
 
@@ -66,7 +75,7 @@ export const ProfilesList = React.forwardRef<SectionRef, ProfilesListProps>(
     }
     const onScrollToTop = useCallback(() => {
       scrollElRef.current?.scrollToOffset({
-        animated: isNative,
+        animated: IS_NATIVE,
         offset: -headerHeight,
       })
     }, [scrollElRef, headerHeight])
@@ -84,7 +93,7 @@ export const ProfilesList = React.forwardRef<SectionRef, ProfilesListProps>(
           style={[
             a.p_lg,
             t.atoms.border_contrast_low,
-            (isWeb || index !== 0) && a.border_t,
+            (IS_WEB || index !== 0) && a.border_t,
           ]}>
           <ProfileCard
             profile={item}
@@ -95,7 +104,23 @@ export const ProfilesList = React.forwardRef<SectionRef, ProfilesListProps>(
       )
     }
 
-    if (listMembersQuery)
+    if (!data) {
+      return (
+        <View
+          style={[
+            a.h_full_vh,
+            {marginTop: headerHeight, marginBottom: bottomBarOffset},
+          ]}>
+          <ListMaybePlaceholder
+            isLoading={true}
+            isError={isError}
+            onRetry={refetch}
+          />
+        </View>
+      )
+    }
+
+    if (data)
       return (
         <List
           data={getSortedProfiles()}
@@ -104,10 +129,13 @@ export const ProfilesList = React.forwardRef<SectionRef, ProfilesListProps>(
           ref={scrollElRef}
           headerOffset={headerHeight}
           ListFooterComponent={
-            <View style={[{height: initialHeaderHeight + bottomBarOffset}]} />
+            <ListFooter
+              style={{paddingBottom: bottomBarOffset, borderTopWidth: 0}}
+            />
           }
           showsVerticalScrollIndicator={false}
           desktopFixedHeight
+          initialNumToRender={initialNumToRender}
           refreshing={isPTRing}
           onRefresh={async () => {
             setIsPTRing(true)

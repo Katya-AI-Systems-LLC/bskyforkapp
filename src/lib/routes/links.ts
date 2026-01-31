@@ -1,6 +1,6 @@
-import {AppBskyGraphDefs, AtUri} from '@atproto/api'
+import {type AppBskyGraphDefs, AtUri} from '@atproto/api'
 
-import {isInvalidHandle} from 'lib/strings/handles'
+import {isInvalidHandle} from '#/lib/strings/handles'
 
 export function makeProfileLink(
   info: {
@@ -19,9 +19,13 @@ export function makeProfileLink(
 export function makeCustomFeedLink(
   did: string,
   rkey: string,
-  ...segments: string[]
+  segment?: string | undefined,
+  feedCacheKey?: 'discover' | 'explore' | undefined,
 ) {
-  return [`/profile`, did, 'feed', rkey, ...segments].join('/')
+  return (
+    [`/profile`, did, 'feed', rkey, ...(segment ? [segment] : [])].join('/') +
+    (feedCacheKey ? `?feedCacheKey=${encodeURIComponent(feedCacheKey)}` : '')
+  )
 }
 
 export function makeListLink(did: string, rkey: string, ...segments: string[]) {

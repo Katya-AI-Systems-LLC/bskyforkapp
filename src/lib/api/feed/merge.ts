@@ -1,14 +1,22 @@
-import {AppBskyFeedDefs, AppBskyFeedGetTimeline, BskyAgent} from '@atproto/api'
+import {
+  type AppBskyFeedDefs,
+  type AppBskyFeedGetTimeline,
+  type BskyAgent,
+} from '@atproto/api'
 import shuffle from 'lodash.shuffle'
 
+import {bundleAsync} from '#/lib/async/bundle'
+import {timeout} from '#/lib/async/timeout'
+import {feedUriToHref} from '#/lib/strings/url-helpers'
 import {getContentLanguages} from '#/state/preferences/languages'
-import {FeedParams} from '#/state/queries/post-feed'
-import {bundleAsync} from 'lib/async/bundle'
-import {timeout} from 'lib/async/timeout'
-import {feedUriToHref} from 'lib/strings/url-helpers'
+import {type FeedParams} from '#/state/queries/post-feed'
 import {FeedTuner} from '../feed-manip'
-import {FeedTunerFn} from '../feed-manip'
-import {FeedAPI, FeedAPIResponse, ReasonFeedSource} from './types'
+import {type FeedTunerFn} from '../feed-manip'
+import {
+  type FeedAPI,
+  type FeedAPIResponse,
+  type ReasonFeedSource,
+} from './types'
 import {createBskyTopicsHeader, isBlueskyOwnedFeed} from './utils'
 
 const REQUEST_WAIT_MS = 500 // 500ms
@@ -193,12 +201,6 @@ class MergeFeedSource {
     return this.hasMore && this.queue.length === 0
   }
 
-  reset() {
-    this.cursor = undefined
-    this.queue = []
-    this.hasMore = true
-  }
-
   take(n: number): AppBskyFeedDefs.FeedViewPost[] {
     return this.queue.splice(0, n)
   }
@@ -232,11 +234,6 @@ class MergeFeedSource {
 class MergeFeedSource_Following extends MergeFeedSource {
   tuner = new FeedTuner(this.feedTuners)
 
-  reset() {
-    super.reset()
-    this.tuner.reset()
-  }
-
   async fetchNext(n: number) {
     return this._fetchNextInner(n)
   }
@@ -249,9 +246,8 @@ class MergeFeedSource_Following extends MergeFeedSource {
     // run the tuner pre-emptively to ensure better mixing
     const slices = this.tuner.tune(res.data.feed, {
       dryRun: false,
-      maintainOrder: true,
     })
-    res.data.feed = slices.map(slice => slice.rootItem)
+    res.data.feed = slices.map(slice => slice._feedPost)
     return res
   }
 }
@@ -323,6 +319,7 @@ class MergeFeedSource_Custom extends MergeFeedSource {
       )
       // attach source info
       for (const post of res.data.feed) {
+        // @ts-ignore
         post.__source = this.sourceInfo
       }
       return res

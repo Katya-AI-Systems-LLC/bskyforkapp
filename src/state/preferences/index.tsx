@@ -1,4 +1,4 @@
-import React from 'react'
+import type React from 'react'
 
 import {Provider as AltTextRequiredProvider} from './alt-text-required'
 import {Provider as AutoplayProvider} from './autoplay'
@@ -9,6 +9,8 @@ import {Provider as InAppBrowserProvider} from './in-app-browser'
 import {Provider as KawaiiProvider} from './kawaii'
 import {Provider as LanguagesProvider} from './languages'
 import {Provider as LargeAltBadgeProvider} from './large-alt-badge'
+import {Provider as SubtitlesProvider} from './subtitles'
+import {Provider as TrendingSettingsProvider} from './trending'
 import {Provider as UsedStarterPacksProvider} from './used-starter-packs'
 
 export {
@@ -21,9 +23,10 @@ export {
   useExternalEmbedsPrefs,
   useSetExternalEmbedPref,
 } from './external-embeds-prefs'
-export * from './hidden-posts'
+export {useHiddenPosts, useHiddenPostsApi} from './hidden-posts'
 export {useLabelDefinitions} from './label-defs'
 export {useLanguagePrefs, useLanguagePrefsApi} from './languages'
+export {useSetSubtitlesEnabled, useSubtitlesEnabled} from './subtitles'
 
 export function Provider({children}: React.PropsWithChildren<{}>) {
   return (
@@ -36,7 +39,11 @@ export function Provider({children}: React.PropsWithChildren<{}>) {
                 <DisableHapticsProvider>
                   <AutoplayProvider>
                     <UsedStarterPacksProvider>
-                      <KawaiiProvider>{children}</KawaiiProvider>
+                      <SubtitlesProvider>
+                        <TrendingSettingsProvider>
+                          <KawaiiProvider>{children}</KawaiiProvider>
+                        </TrendingSettingsProvider>
+                      </SubtitlesProvider>
                     </UsedStarterPacksProvider>
                   </AutoplayProvider>
                 </DisableHapticsProvider>

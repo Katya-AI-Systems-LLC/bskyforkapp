@@ -1,10 +1,13 @@
-import React from 'react'
+import React, {useState} from 'react'
 import {View} from 'react-native'
-import {ComAtprotoLabelDefs, ComAtprotoModerationDefs} from '@atproto/api'
+import {type ComAtprotoLabelDefs, ToolsOzoneReportDefs} from '@atproto/api'
+import {XRPCError} from '@atproto/xrpc'
 import {msg, Trans} from '@lingui/macro'
 import {useLingui} from '@lingui/react'
 import {useMutation} from '@tanstack/react-query'
 
+import {useGetTimeAgo} from '#/lib/hooks/useTimeAgo'
+import {useLabelSubject} from '#/lib/moderation'
 import {useLabelInfo} from '#/lib/moderation/useLabelInfo'
 import {makeProfileLink} from '#/lib/routes/links'
 import {sanitizeHandle} from '#/lib/strings/handles'
@@ -16,30 +19,25 @@ import {Button, ButtonIcon, ButtonText} from '#/components/Button'
 import * as Dialog from '#/components/Dialog'
 import {InlineLinkText} from '#/components/Link'
 import {Text} from '#/components/Typography'
+import {IS_ANDROID} from '#/env'
+import {Admonition} from '../Admonition'
 import {Divider} from '../Divider'
 import {Loader} from '../Loader'
-export {useDialogControl as useLabelsOnMeDialogControl} from '#/components/Dialog'
 
-type Subject =
-  | {
-      uri: string
-      cid: string
-    }
-  | {
-      did: string
-    }
+export {useDialogControl as useLabelsOnMeDialogControl} from '#/components/Dialog'
 
 export interface LabelsOnMeDialogProps {
   control: Dialog.DialogOuterProps['control']
-  subject: Subject
   labels: ComAtprotoLabelDefs.Label[]
+  type: 'account' | 'content'
 }
 
 export function LabelsOnMeDialog(props: LabelsOnMeDialogProps) {
   return (
-    <Dialog.Outer control={props.control}>
+    <Dialog.Outer
+      control={props.control}
+      nativeOptions={{preventExpansion: true}}>
       <Dialog.Handle />
-
       <LabelsOnMeDialogInner {...props} />
     </Dialog.Outer>
   )
@@ -51,8 +49,8 @@ function LabelsOnMeDialogInner(props: LabelsOnMeDialogProps) {
   const [appealingLabel, setAppealingLabel] = React.useState<
     ComAtprotoLabelDefs.Label | undefined
   >(undefined)
-  const {subject, labels} = props
-  const isAccount = 'did' in subject
+  const {labels} = props
+  const isAccount = props.type === 'account'
   const containsSelfLabel = React.useMemo(
     () => labels.some(l => l.src === currentAccount?.did),
     [currentAccount?.did, labels],
@@ -68,7 +66,6 @@ function LabelsOnMeDialogInner(props: LabelsOnMeDialogProps) {
       {appealingLabel ? (
         <AppealForm
           label={appealingLabel}
-          subject={subject}
           control={props.control}
           onPressBack={() => setAppealingLabel(undefined)}
         />
@@ -127,6 +124,10 @@ function Label({
   const t = useTheme()
   const {_} = useLingui()
   const {labeler, strings} = useLabelInfo(label)
+  const sourceName = labeler
+    ? sanitizeHandle(labeler.creator.handle, '@')
+    : label.src
+  const timeDiff = useGetTimeAgo({future: true})
   return (
     <View
       style={[
@@ -137,8 +138,10 @@ function Label({
       ]}>
       <View style={[a.p_md, a.gap_sm, a.flex_row]}>
         <View style={[a.flex_1, a.gap_xs]}>
-          <Text style={[a.font_bold, a.text_md]}>{strings.name}</Text>
-          <Text style={[t.atoms.text_contrast_medium, a.leading_snug]}>
+          <Text emoji style={[a.font_semi_bold, a.text_md]}>
+            {strings.name}
+          </Text>
+          <Text emoji style={[t.atoms.text_contrast_medium, a.leading_snug]}>
             {strings.description}
           </Text>
         </View>
@@ -161,24 +164,48 @@ function Label({
       <Divider />
 
       <View style={[a.px_md, a.py_sm, t.atoms.bg_contrast_25]}>
-        <Text style={[t.atoms.text_contrast_medium]}>
-          {isSelfLabel ? (
+        {isSelfLabel ? (
+          <Text style={[t.atoms.text_contrast_medium]}>
             <Trans>This label was applied by you.</Trans>
-          ) : (
-            <Trans>
-              Source:{' '}
-              <InlineLinkText
-                to={makeProfileLink(
-                  labeler ? labeler.creator : {did: label.src, handle: ''},
-                )}
-                onPress={() => control.close()}>
-                {labeler
-                  ? sanitizeHandle(labeler.creator.handle, '@')
-                  : label.src}
-              </InlineLinkText>
-            </Trans>
-          )}
-        </Text>
+          </Text>
+        ) : (
+          <View
+            style={[
+              a.flex_row,
+              a.justify_between,
+              a.gap_xl,
+              {paddingBottom: 1},
+            ]}>
+            <Text
+              style={[a.flex_1, a.leading_snug, t.atoms.text_contrast_medium]}
+              numberOfLines={1}>
+              <Trans>
+                Source:{' '}
+                <InlineLinkText
+                  label={sourceName}
+                  to={makeProfileLink(
+                    labeler ? labeler.creator : {did: label.src, handle: ''},
+                  )}
+                  onPress={() => control.close()}>
+                  {sourceName}
+                </InlineLinkText>
+              </Trans>
+            </Text>
+            {label.exp && (
+              <View>
+                <Text
+                  style={[
+                    a.leading_snug,
+                    a.text_sm,
+                    a.italic,
+                    t.atoms.text_contrast_medium,
+                  ]}>
+                  <Trans>Expires in {timeDiff(Date.now(), label.exp)}</Trans>
+                </Text>
+              </View>
+            )}
+          </View>
+        )}
       </View>
     </View>
   )
@@ -186,12 +213,10 @@ function Label({
 
 function AppealForm({
   label,
-  subject,
   control,
   onPressBack,
 }: {
   label: ComAtprotoLabelDefs.Label
-  subject: Subject
   control: Dialog.DialogOuterProps['control']
   onPressBack: () => void
 }) {
@@ -199,32 +224,51 @@ function AppealForm({
   const {labeler, strings} = useLabelInfo(label)
   const {gtMobile} = useBreakpoints()
   const [details, setDetails] = React.useState('')
+  const {subject} = useLabelSubject({label})
   const isAccountReport = 'did' in subject
   const agent = useAgent()
+  const sourceName = labeler
+    ? sanitizeHandle(labeler.creator.handle, '@')
+    : label.src
+  const [error, setError] = useState<string | null>(null)
 
   const {mutate, isPending} = useMutation({
     mutationFn: async () => {
       const $type = !isAccountReport
         ? 'com.atproto.repo.strongRef'
         : 'com.atproto.admin.defs#repoRef'
-      await agent
-        .withProxy('atproto_labeler', label.src)
-        .createModerationReport({
-          reasonType: ComAtprotoModerationDefs.REASONAPPEAL,
+      await agent.createModerationReport(
+        {
+          reasonType: ToolsOzoneReportDefs.REASONAPPEAL,
           subject: {
             $type,
             ...subject,
           },
           reason: details,
-        })
+        },
+        {
+          encoding: 'application/json',
+          headers: {
+            'atproto-proxy': `${label.src}#atproto_labeler`,
+          },
+        },
+      )
     },
     onError: err => {
+      if (err instanceof XRPCError && err.error === 'AlreadyAppealed') {
+        setError(
+          _(
+            msg`You've already appealed this label and it's being reviewed by our moderation team.`,
+          ),
+        )
+      } else {
+        setError(_(msg`Failed to submit appeal, please try again.`))
+      }
       logger.error('Failed to submit label appeal', {message: err})
-      Toast.show(_(msg`Failed to submit appeal, please try again.`))
     },
     onSuccess: () => {
       control.close()
-      Toast.show(_(msg`Appeal submitted`))
+      Toast.show(_(msg({message: 'Appeal submitted', context: 'toast'})))
     },
   })
 
@@ -232,23 +276,31 @@ function AppealForm({
 
   return (
     <>
-      <Text style={[a.text_2xl, a.font_bold, a.pb_xs, a.leading_tight]}>
-        <Trans>Appeal "{strings.name}" label</Trans>
-      </Text>
-      <Text style={[a.text_md, a.leading_snug]}>
-        <Trans>
-          This appeal will be sent to{' '}
-          <InlineLinkText
-            to={makeProfileLink(
-              labeler ? labeler.creator : {did: label.src, handle: ''},
-            )}
-            onPress={() => control.close()}
-            style={[a.text_md, a.leading_snug]}>
-            {labeler ? sanitizeHandle(labeler.creator.handle, '@') : label.src}
-          </InlineLinkText>
-          .
-        </Trans>
-      </Text>
+      <View>
+        <Text style={[a.text_2xl, a.font_semi_bold, a.pb_xs, a.leading_tight]}>
+          <Trans>Appeal "{strings.name}" label</Trans>
+        </Text>
+        <Text style={[a.text_md, a.leading_snug]}>
+          <Trans>
+            This appeal will be sent to{' '}
+            <InlineLinkText
+              label={sourceName}
+              to={makeProfileLink(
+                labeler ? labeler.creator : {did: label.src, handle: ''},
+              )}
+              onPress={() => control.close()}
+              style={[a.text_md, a.leading_snug]}>
+              {sourceName}
+            </InlineLinkText>
+            .
+          </Trans>
+        </Text>
+      </View>
+      {error && (
+        <Admonition type="error" style={[a.mt_sm]}>
+          {error}
+        </Admonition>
+      )}
       <View style={[a.my_md]}>
         <Dialog.Input
           label={_(msg`Text input field`)}
@@ -276,7 +328,7 @@ function AppealForm({
           testID="backBtn"
           variant="solid"
           color="secondary"
-          size="medium"
+          size="large"
           onPress={onPressBack}
           label={_(msg`Back`)}>
           <ButtonText>{_(msg`Back`)}</ButtonText>
@@ -285,13 +337,14 @@ function AppealForm({
           testID="submitBtn"
           variant="solid"
           color="primary"
-          size="medium"
+          size="large"
           onPress={onSubmit}
           label={_(msg`Submit`)}>
           <ButtonText>{_(msg`Submit`)}</ButtonText>
           {isPending && <ButtonIcon icon={Loader} />}
         </Button>
       </View>
+      {IS_ANDROID && <View style={{height: 300}} />}
     </>
   )
 }

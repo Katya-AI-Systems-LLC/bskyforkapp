@@ -1,8 +1,11 @@
-import {AtpSessionEvent} from '@atproto/api'
+import {type AtpAgent, type AtpSessionEvent} from '@atproto/api'
 
+import {unregisterPushToken} from '#/lib/notifications/notifications'
+import {logger} from '#/lib/notifications/util'
 import {createPublicAgent} from './agent'
 import {wrapSessionReducerForLogging} from './logging'
-import {SessionAccount} from './types'
+import {type SessionAccount} from './types'
+import {createTemporaryAgentsAndResume} from './util'
 
 // A hack so that the reducer can't read anything from the agent.
 // From the reducer's point of view, it should be a completely opaque object.
@@ -42,12 +45,20 @@ export type Action =
       accountDid: string
     }
   | {
-      type: 'logged-out'
+      type: 'logged-out-current-account'
+    }
+  | {
+      type: 'logged-out-every-account'
     }
   | {
       type: 'synced-accounts'
       syncedAccounts: SessionAccount[]
       syncedCurrentDid: string | undefined
+    }
+  | {
+      type: 'partial-refresh-session'
+      accountDid: string
+      patch: Pick<SessionAccount, 'emailConfirmed' | 'emailAuthFactor'>
     }
 
 function createPublicAgentState(): AgentState {
@@ -79,12 +90,8 @@ let reducer = (state: State, action: Action): State => {
         return state
       }
       if (sessionEvent === 'network-error') {
-        // Don't change stored accounts but kick to the choose account screen.
-        return {
-          accounts: state.accounts,
-          currentAgentState: createPublicAgentState(),
-          needsPersist: true,
-        }
+        // Assume it's transient.
+        return state
       }
       const existingAccount = state.accounts.find(a => a.did === accountDid)
       if (
@@ -133,6 +140,23 @@ let reducer = (state: State, action: Action): State => {
     }
     case 'removed-account': {
       const {accountDid} = action
+
+      // side effect
+      const account = state.accounts.find(a => a.did === accountDid)
+      if (account) {
+        createTemporaryAgentsAndResume([account])
+          .then(agents => unregisterPushToken(agents))
+          .then(() =>
+            logger.debug('Push token unregistered', {did: accountDid}),
+          )
+          .catch(err => {
+            logger.error('Failed to unregister push token', {
+              did: accountDid,
+              error: err,
+            })
+          })
+      }
+
       return {
         accounts: state.accounts.filter(a => a.did !== accountDid),
         currentAgentState:
@@ -142,7 +166,49 @@ let reducer = (state: State, action: Action): State => {
         needsPersist: true,
       }
     }
-    case 'logged-out': {
+    case 'logged-out-current-account': {
+      const {currentAgentState} = state
+      const accountDid = currentAgentState.did
+      // side effect
+      const account = state.accounts.find(a => a.did === accountDid)
+      if (account && accountDid) {
+        createTemporaryAgentsAndResume([account])
+          .then(agents => unregisterPushToken(agents))
+          .then(() =>
+            logger.debug('Push token unregistered', {did: accountDid}),
+          )
+          .catch(err => {
+            logger.error('Failed to unregister push token', {
+              did: accountDid,
+              error: err,
+            })
+          })
+      }
+
+      return {
+        accounts: state.accounts.map(a =>
+          a.did === accountDid
+            ? {
+                ...a,
+                refreshJwt: undefined,
+                accessJwt: undefined,
+              }
+            : a,
+        ),
+        currentAgentState: createPublicAgentState(),
+        needsPersist: true,
+      }
+    }
+    case 'logged-out-every-account': {
+      createTemporaryAgentsAndResume(state.accounts)
+        .then(agents => unregisterPushToken(agents))
+        .then(() => logger.debug('Push token unregistered'))
+        .catch(err => {
+          logger.error('Failed to unregister push token', {
+            error: err,
+          })
+        })
+
       return {
         accounts: state.accounts.map(a => ({
           ...a,
@@ -163,6 +229,39 @@ let reducer = (state: State, action: Action): State => {
             ? state.currentAgentState
             : createPublicAgentState(), // Log out if different user.
         needsPersist: false, // Synced from another tab. Don't persist to avoid cycles.
+      }
+    }
+    case 'partial-refresh-session': {
+      const {accountDid, patch} = action
+      const agent = state.currentAgentState.agent as AtpAgent
+
+      /*
+       * Only mutating values that are safe. Be very careful with this.
+       */
+      if (agent.session) {
+        agent.session.emailConfirmed =
+          patch.emailConfirmed ?? agent.session.emailConfirmed
+        agent.session.emailAuthFactor =
+          patch.emailAuthFactor ?? agent.session.emailAuthFactor
+      }
+
+      return {
+        ...state,
+        currentAgentState: {
+          ...state.currentAgentState,
+          agent,
+        },
+        accounts: state.accounts.map(a => {
+          if (a.did === accountDid) {
+            return {
+              ...a,
+              emailConfirmed: patch.emailConfirmed ?? a.emailConfirmed,
+              emailAuthFactor: patch.emailAuthFactor ?? a.emailAuthFactor,
+            }
+          }
+          return a
+        }),
+        needsPersist: true,
       }
     }
   }

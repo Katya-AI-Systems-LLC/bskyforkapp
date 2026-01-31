@@ -1,33 +1,36 @@
-import React, {ComponentProps, memo, useMemo} from 'react'
+import {type JSX, memo, useCallback, useMemo} from 'react'
 import {
-  GestureResponderEvent,
+  type GestureResponderEvent,
   Platform,
   Pressable,
-  StyleProp,
-  TextProps,
-  TextStyle,
-  TouchableOpacity,
+  type StyleProp,
+  type TextProps,
+  type TextStyle,
+  type TouchableOpacity,
   View,
-  ViewStyle,
+  type ViewStyle,
 } from 'react-native'
 import {sanitizeUrl} from '@braintree/sanitize-url'
-import {StackActions, useLinkProps} from '@react-navigation/native'
+import {StackActions} from '@react-navigation/native'
 
-import {useModalControls} from '#/state/modals'
-import {useOpenLink} from '#/state/preferences/in-app-browser'
 import {
-  DebouncedNavigationProp,
+  type DebouncedNavigationProp,
   useNavigationDeduped,
-} from 'lib/hooks/useNavigationDeduped'
+} from '#/lib/hooks/useNavigationDeduped'
+import {useOpenLink} from '#/lib/hooks/useOpenLink'
+import {getTabState, TabState} from '#/lib/routes/helpers'
 import {
   convertBskyAppUrlIfNeeded,
   isExternalUrl,
   linkRequiresWarning,
-} from 'lib/strings/url-helpers'
-import {TypographyVariant} from 'lib/ThemeContext'
-import {isAndroid, isWeb} from 'platform/detection'
-import {WebAuxClickWrapper} from 'view/com/util/WebAuxClickWrapper'
+} from '#/lib/strings/url-helpers'
+import {type TypographyVariant} from '#/lib/ThemeContext'
+import {emitSoftReset} from '#/state/events'
+import {useModalControls} from '#/state/modals'
+import {WebAuxClickWrapper} from '#/view/com/util/WebAuxClickWrapper'
 import {useTheme} from '#/alf'
+import {useGlobalDialogsControlContext} from '#/components/dialogs/Context'
+import {IS_ANDROID, IS_WEB} from '#/env'
 import {router} from '../../../routes'
 import {PressableWithHover} from './PressableWithHover'
 import {Text} from './text/Text'
@@ -36,7 +39,7 @@ type Event =
   | React.MouseEvent<HTMLAnchorElement, MouseEvent>
   | GestureResponderEvent
 
-interface Props extends ComponentProps<typeof TouchableOpacity> {
+interface Props extends React.ComponentProps<typeof TouchableOpacity> {
   testID?: string
   style?: StyleProp<ViewStyle>
   href?: string
@@ -45,13 +48,17 @@ interface Props extends ComponentProps<typeof TouchableOpacity> {
   hoverStyle?: StyleProp<ViewStyle>
   noFeedback?: boolean
   asAnchor?: boolean
-  dataSet?: Object | undefined
+  dataSet?: any
   anchorNoUnderline?: boolean
   navigationAction?: 'push' | 'replace' | 'navigate'
   onPointerEnter?: () => void
+  onPointerLeave?: () => void
   onBeforePress?: () => void
 }
 
+/**
+ * @deprecated use Link from `#/components/Link.tsx` instead
+ */
 export const Link = memo(function Link({
   testID,
   style,
@@ -66,6 +73,7 @@ export const Link = memo(function Link({
   onBeforePress,
   accessibilityActions,
   onAccessibilityAction,
+  dataSet: dataSetProp,
   ...props
 }: Props) {
   const t = useTheme()
@@ -74,7 +82,7 @@ export const Link = memo(function Link({
   const anchorHref = asAnchor ? sanitizeUrl(href) : undefined
   const openLink = useOpenLink()
 
-  const onPress = React.useCallback(
+  const onPress = useCallback(
     (e?: Event) => {
       onBeforePress?.()
       if (typeof href === 'string') {
@@ -96,6 +104,10 @@ export const Link = memo(function Link({
     {name: 'activate', label: title},
   ]
 
+  const dataSet = anchorNoUnderline
+    ? {...dataSetProp, noUnderline: 1}
+    : dataSetProp
+
   if (noFeedback) {
     return (
       <WebAuxClickWrapper>
@@ -112,11 +124,13 @@ export const Link = memo(function Link({
               onAccessibilityAction?.(e)
             }
           }}
+          // @ts-ignore web only -sfn
+          dataSet={dataSet}
           {...props}
           android_ripple={{
             color: t.atoms.bg_contrast_25.backgroundColor,
           }}
-          unstable_pressDelay={isAndroid ? 90 : undefined}>
+          unstable_pressDelay={IS_ANDROID ? 90 : undefined}>
           {/* @ts-ignore web only -prf */}
           <View style={style} href={anchorHref}>
             {children ? children : <Text>{title || 'link'}</Text>}
@@ -124,17 +138,6 @@ export const Link = memo(function Link({
         </Pressable>
       </WebAuxClickWrapper>
     )
-  }
-
-  if (anchorNoUnderline) {
-    // @ts-ignore web only -prf
-    props.dataSet = props.dataSet || {}
-    // @ts-ignore web only -prf
-    props.dataSet.noUnderline = 1
-  }
-
-  if (title && !props.accessibilityLabel) {
-    props.accessibilityLabel = title
   }
 
   const Com = props.hoverStyle ? PressableWithHover : Pressable
@@ -145,14 +148,20 @@ export const Link = memo(function Link({
       onPress={onPress}
       accessible={accessible}
       accessibilityRole="link"
+      accessibilityLabel={props.accessibilityLabel ?? title}
+      accessibilityHint={props.accessibilityHint}
       // @ts-ignore web only -prf
       href={anchorHref}
+      dataSet={dataSet}
       {...props}>
       {children ? children : <Text>{title || 'link'}</Text>}
     </Com>
   )
 })
 
+/**
+ * @deprecated use InlineLinkText from `#/components/Link.tsx` instead
+ */
 export const TextLink = memo(function TextLink({
   testID,
   type = 'md',
@@ -161,14 +170,14 @@ export const TextLink = memo(function TextLink({
   text,
   numberOfLines,
   lineHeight,
-  dataSet,
+  dataSet: dataSetProp,
   title,
-  onPress,
+  onPress: onPressProp,
   onBeforePress,
   disableMismatchWarning,
   navigationAction,
   anchorNoUnderline,
-  ...orgProps
+  ...props
 }: {
   testID?: string
   type?: TypographyVariant
@@ -184,35 +193,33 @@ export const TextLink = memo(function TextLink({
   anchorNoUnderline?: boolean
   onBeforePress?: () => void
 } & TextProps) {
-  const {...props} = useLinkProps({to: sanitizeUrl(href)})
   const navigation = useNavigationDeduped()
-  const {openModal, closeModal} = useModalControls()
+  const {closeModal} = useModalControls()
+  const {linkWarningDialogControl} = useGlobalDialogsControlContext()
   const openLink = useOpenLink()
 
   if (!disableMismatchWarning && typeof text !== 'string') {
     console.error('Unable to detect mismatching label')
   }
 
-  if (anchorNoUnderline) {
-    dataSet = dataSet ?? {}
-    dataSet.noUnderline = 1
-  }
+  const dataSet = anchorNoUnderline
+    ? {...dataSetProp, noUnderline: 1}
+    : dataSetProp
 
-  props.onPress = React.useCallback(
+  const onPress = useCallback(
     (e?: Event) => {
       const requiresWarning =
         !disableMismatchWarning &&
         linkRequiresWarning(href, typeof text === 'string' ? text : '')
       if (requiresWarning) {
         e?.preventDefault?.()
-        openModal({
-          name: 'link-warning',
-          text: typeof text === 'string' ? text : '',
+        linkWarningDialogControl.open({
+          displayText: typeof text === 'string' ? text : '',
           href,
         })
       }
       if (
-        isWeb &&
+        IS_WEB &&
         href !== '#' &&
         e != null &&
         isModifiedEvent(e as React.MouseEvent)
@@ -221,10 +228,10 @@ export const TextLink = memo(function TextLink({
         return
       }
       onBeforePress?.()
-      if (onPress) {
+      if (onPressProp) {
         e?.preventDefault?.()
-        // @ts-ignore function signature differs by platform -prf
-        return onPress()
+        // @ts-expect-error function signature differs by platform -prf
+        return onPressProp()
       }
       return onPressInner(
         closeModal,
@@ -237,15 +244,15 @@ export const TextLink = memo(function TextLink({
     },
     [
       onBeforePress,
-      onPress,
+      onPressProp,
       closeModal,
-      openModal,
       navigation,
       href,
       text,
       disableMismatchWarning,
       navigationAction,
       openLink,
+      linkWarningDialogControl,
     ],
   )
   const hrefAttrs = useMemo(() => {
@@ -270,8 +277,10 @@ export const TextLink = memo(function TextLink({
       title={title}
       // @ts-ignore web only -prf
       hrefAttrs={hrefAttrs} // hack to get open in new tab to work on safari. without this, safari will open in a new window
-      {...props}
-      {...orgProps}>
+      onPress={onPress}
+      accessibilityRole="link"
+      href={convertBskyAppUrlIfNeeded(sanitizeUrl(href))}
+      {...props}>
       {text}
     </Text>
   )
@@ -298,6 +307,9 @@ interface TextLinkOnWebOnlyProps extends TextProps {
   onPointerEnter?: () => void
   anchorNoUnderline?: boolean
 }
+/**
+ * @deprecated use WebOnlyInlineLinkText from `#/components/Link.tsx` instead
+ */
 export const TextLinkOnWebOnly = memo(function DesktopWebTextLink({
   testID,
   type = 'md',
@@ -311,7 +323,7 @@ export const TextLinkOnWebOnly = memo(function DesktopWebTextLink({
   onBeforePress,
   ...props
 }: TextLinkOnWebOnlyProps) {
-  if (isWeb) {
+  if (IS_WEB) {
     return (
       <TextLink
         testID={testID}
@@ -399,15 +411,24 @@ function onPressInner(
     } else {
       closeModal() // close any active modals
 
+      const [routeName, params] = router.matchPath(href)
       if (navigationAction === 'push') {
         // @ts-ignore we're not able to type check on this one -prf
-        navigation.dispatch(StackActions.push(...router.matchPath(href)))
+        navigation.dispatch(StackActions.push(routeName, params))
       } else if (navigationAction === 'replace') {
         // @ts-ignore we're not able to type check on this one -prf
-        navigation.dispatch(StackActions.replace(...router.matchPath(href)))
+        navigation.dispatch(StackActions.replace(routeName, params))
       } else if (navigationAction === 'navigate') {
-        // @ts-ignore we're not able to type check on this one -prf
-        navigation.navigate(...router.matchPath(href))
+        const state = navigation.getState()
+        const tabState = getTabState(state, routeName)
+        if (tabState === TabState.InsideAtRoot) {
+          emitSoftReset()
+        } else {
+          // note: 'navigate' actually acts the same as 'push' nowadays
+          // therefore we need to add 'pop' -sfn
+          // @ts-ignore we're not able to type check on this one -prf
+          navigation.navigate(routeName, params, {pop: true})
+        }
       } else {
         throw Error('Unsupported navigator action.')
       }

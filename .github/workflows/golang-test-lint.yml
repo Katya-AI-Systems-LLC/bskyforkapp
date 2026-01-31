@@ -7,7 +7,7 @@ on:
       - main
 
 concurrency:
-  group: '${{ github.workflow }}-${{ github.head_ref || github.ref }}'
+  group: "${{ github.workflow }}-${{ github.head_ref || github.ref }}"
   cancel-in-progress: true
 
 jobs:
@@ -15,13 +15,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
       - name: Set up Go tooling
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.22'
+          go-version-file: bskyweb/go.mod
       - name: Dummy Static Files
-        run: touch bskyweb/static/js/blah.js && touch bskyweb/static/media/blah.txt
+        run: touch bskyweb/static/js/blah.js && touch bskyweb/static/css/blah.txt && touch bskyweb/static/media/blah.txt
       - name: Check
         run: cd bskyweb/ && make check
       - name: Build (binary)
@@ -32,12 +32,12 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Git Checkout
-        uses: actions/checkout@v3
+        uses: actions/checkout@v5
       - name: Set up Go tooling
-        uses: actions/setup-go@v3
+        uses: actions/setup-go@v6
         with:
-          go-version: '1.22'
+          go-version-file: bskyweb/go.mod
       - name: Dummy Static Files
-        run: touch bskyweb/static/js/blah.js && touch bskyweb/static/media/blah.txt
+        run: touch bskyweb/static/js/blah.js && touch bskyweb/static/css/blah.txt && touch bskyweb/static/media/blah.txt
       - name: Lint
         run: cd bskyweb/ &&  make lint

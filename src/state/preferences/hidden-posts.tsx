@@ -14,10 +14,12 @@ type ApiContext = {
 const stateContext = React.createContext<StateContext>(
   persisted.defaults.hiddenPosts,
 )
+stateContext.displayName = 'HiddenPostsStateContext'
 const apiContext = React.createContext<ApiContext>({
   hidePost: () => {},
   unhidePost: () => {},
 })
+apiContext.displayName = 'HiddenPostsApiContext'
 
 export function Provider({children}: React.PropsWithChildren<{}>) {
   const [state, setState] = React.useState(persisted.get('hiddenPosts'))
@@ -44,8 +46,8 @@ export function Provider({children}: React.PropsWithChildren<{}>) {
   )
 
   React.useEffect(() => {
-    return persisted.onUpdate(() => {
-      setState(persisted.get('hiddenPosts'))
+    return persisted.onUpdate('hiddenPosts', nextHiddenPosts => {
+      setState(nextHiddenPosts)
     })
   }, [setStateWrapped])
 
